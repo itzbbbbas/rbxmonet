@@ -95,11 +95,11 @@ impl Terminal for ConfirmViewer {
             }
 
             match key_event.code {
-                KeyCode::Char('n') => {
+                KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
                     self.state = ConfirmState::Closed;
                     self.should_quit = true;
                 }
-                KeyCode::Char('y') => {
+                KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
                     self.state = ConfirmState::Confirmed;
                     self.should_quit = true;
                 }

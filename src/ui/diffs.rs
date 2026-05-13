@@ -283,9 +283,9 @@ impl Terminal for DiffViewer {
 
         let items = vec![
             "Enter: View Diff".to_string(),
-            "c: Confirm Diff".to_string(),
-            "C: Confirm All Diffs".to_string(),
-            "q: Quit".to_string(),
+            "c: Mark Diff".to_string(),
+            "C: Mark All Diffs".to_string(),
+            "q: Done (continue to sync prompt)".to_string(),
         ];
 
         let keybind_areas = Layout::default()
