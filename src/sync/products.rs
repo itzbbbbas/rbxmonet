@@ -138,17 +138,35 @@ impl VCSProducts {
         let mut file = fs::File::create(products_lua_file).await?;
         let mut contents = String::new();
 
-        let serialize = |contents: &mut String, products: &HashMap<String, Product>| {
-            let mut values: Vec<_> = products.values().collect();
-            values.sort_by(|a, b| a.id.cmp(&b.id));
+        let discount_prefix = self
+            .metadata
+            .discount_prefix
+            .clone()
+            .unwrap_or_else(|| "💲{}% OFF💲 ".to_string());
 
-            for (index, product) in values.iter().enumerate() {
+        let format_display_name = |product: &Product| -> String {
+            if product.has_discount() {
+                let prefix =
+                    discount_prefix.replace("{}", &product.discount.unwrap_or(0).to_string());
+                format!("{}{}", prefix, product.name)
+            } else if let Some(p) = &product.prefix {
+                format!("{} {}", p, product.name)
+            } else {
+                product.name.clone()
+            }
+        };
+
+        let serialize = |contents: &mut String, products: &HashMap<String, Product>| {
+            let mut entries: Vec<(&String, &Product)> = products.iter().collect();
+            entries.sort_by(|a, b| a.1.id.cmp(&b.1.id));
+
+            for (index, (slug, product)) in entries.iter().enumerate() {
                 *contents += &format!(
                     "\t\t[{:?}] = {{ id = {:?}, price = {}, name = {:?}, description = {:?} }}",
-                    product.get_title(),
+                    slug,
                     product.id.unwrap_or(0),
                     product.get_price(),
-                    product.name,
+                    format_display_name(product),
                     product.description.clone().unwrap_or_default(),
                 );
 
