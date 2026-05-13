@@ -1,13 +1,17 @@
 [package]
-name = "rbx_products"
-version = "0.1.1"
+name = "rbx_monets"
+version = "0.1.2"
 edition = "2024"
 authors = ["Jack Fox <jack@infernal.io>"]
-description = "A CLI tool for managing Roblox gamepasses and dev-products."
+description = "Fork of rbx-products — generates monets.luau without type cast."
 license = "MIT"
-repository = "https://github.com/outofbears/rbx-products"
+repository = "https://github.com/itzbbbbas/rbx-monets"
 readme = "README.md"
 include = ["**/*.rs"]
+
+[[bin]]
+name = "rbx-monets"
+path = "src/main.rs"
 
 
 [dependencies]
