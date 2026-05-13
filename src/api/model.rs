@@ -2,7 +2,7 @@ use nestify::nest;
 use reqwest::multipart::Form;
 use serde::{Deserialize, Serialize};
 
-use crate::sync::products::Product;
+use crate::sync::products::{Product, SubscriptionEntry};
 
 macro_rules! paginate_struct {
     ($type:ty, $name:ident, $field:ident) => {
@@ -197,19 +197,23 @@ impl From<&Product> for BadgeUpdateRequest {
     }
 }
 
-impl From<&Subscription> for Product {
+impl From<&Subscription> for SubscriptionEntry {
     fn from(s: &Subscription) -> Self {
-        let id = s.id.parse::<u64>().ok();
+        let id = if s.id.is_empty() {
+            None
+        } else if s.id.starts_with("EXP-") {
+            Some(s.id.clone())
+        } else {
+            Some(format!("EXP-{}", s.id))
+        };
+
         Self {
-            discount: None,
-            prefix: None,
             id,
             name: s.name.clone(),
             description: Some(s.description.clone()),
             active: s.state.eq_ignore_ascii_case("STATE_ACTIVE")
                 || s.state.eq_ignore_ascii_case("ACTIVE"),
             price: s.basic_price_in_robux.unwrap_or(0) as i64,
-            regional_pricing: None,
         }
     }
 }

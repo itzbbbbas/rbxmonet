@@ -258,7 +258,7 @@ impl Uploader {
                         match products.iter().find(|multi_product| match multi_product {
                             MultiProduct::GamePass(pass) => pass.id.unwrap() == id,
                             MultiProduct::DevProduct(prod) => prod.id.unwrap() == id,
-                            MultiProduct::Subscription(sub) => sub.id.unwrap() == id,
+                            MultiProduct::Subscription(_) => false,
                             MultiProduct::Badge(b) => b.id.unwrap() == id,
                         }) {
                             Some(MultiProduct::GamePass(pass)) => (ProductType::GamePass, pass),

@@ -2,7 +2,7 @@ use log::info;
 
 use crate::Result;
 use crate::api::products::fetch_all_products;
-use crate::sync::products::{MultiProduct, Product, ProductType, VCSProducts};
+use crate::sync::products::{MultiProduct, Product, ProductType, SubscriptionEntry, VCSProducts};
 use crate::utils::{canonical_name, format_name, is_censored};
 
 pub struct Downloader {
@@ -48,11 +48,54 @@ impl Downloader {
         );
 
         remote_product_data.iter().for_each(|multi_product| {
+            // Subscriptions have string ids and a slimmer schema; handle separately.
+            if let MultiProduct::Subscription(sub) = multi_product {
+                let name = format_name(canonical_name(sub.name.clone(), &filters));
+
+                let existing_key = local_products_data
+                    .subscriptions
+                    .iter()
+                    .find(|(_, x)| x.id == sub.id)
+                    .map(|(k, _)| k.clone());
+
+                let key = existing_key.clone().unwrap_or_else(|| name.clone());
+                let existing_entry = existing_key
+                    .as_ref()
+                    .and_then(|k| local_products_data.subscriptions.get(k).cloned());
+
+                let merged = SubscriptionEntry {
+                    id: sub.id.clone(),
+                    name: if !overwrite
+                        && let Some(existing) = &existing_entry
+                    {
+                        existing.name.clone()
+                    } else {
+                        sub.name.clone()
+                    },
+                    description: if !overwrite
+                        && let Some(existing) = &existing_entry
+                    {
+                        existing.description.clone()
+                    } else {
+                        sub.description.clone()
+                    },
+                    active: sub.active,
+                    price: if let Some(existing) = &existing_entry {
+                        if overwrite { sub.price } else { existing.price }
+                    } else {
+                        sub.price
+                    },
+                };
+
+                local_products_data.subscriptions.insert(key, merged);
+                return;
+            }
+
             let (product, product_type): (Product, ProductType) = match multi_product {
                 MultiProduct::GamePass(prod) => (prod.clone(), ProductType::GamePass),
                 MultiProduct::DevProduct(prod) => (prod.clone(), ProductType::DevProduct),
-                MultiProduct::Subscription(prod) => (prod.clone(), ProductType::Subscription),
                 MultiProduct::Badge(prod) => (prod.clone(), ProductType::Badge),
+                MultiProduct::Subscription(_) => unreachable!(),
             };
 
             let name = format_name(canonical_name(product.name.clone(), &filters));
@@ -68,17 +111,12 @@ impl Downloader {
                         == product.id.map(|id| id as i64).unwrap_or(-1)
                 }),
 
-                ProductType::Subscription => {
-                    local_products_data.subscriptions.iter().find(|(_, x)| {
-                        x.id.map(|id| id as i64).unwrap_or(-1)
-                            == product.id.map(|id| id as i64).unwrap_or(-1)
-                    })
-                }
-
                 ProductType::Badge => local_products_data.badges.iter().find(|(_, x)| {
                     x.id.map(|id| id as i64).unwrap_or(-1)
                         == product.id.map(|id| id as i64).unwrap_or(-1)
                 }),
+
+                ProductType::Subscription => unreachable!(),
             };
 
             let mut product = Product {
@@ -147,10 +185,8 @@ impl Downloader {
             match product_type {
                 ProductType::GamePass => local_products_data.gamepasses.insert(key, product),
                 ProductType::DevProduct => local_products_data.products.insert(key, product),
-                ProductType::Subscription => {
-                    local_products_data.subscriptions.insert(key, product)
-                }
                 ProductType::Badge => local_products_data.badges.insert(key, product),
+                ProductType::Subscription => unreachable!(),
             };
         });
 

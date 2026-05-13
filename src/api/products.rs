@@ -8,7 +8,7 @@ use crate::api::model::{
     BadgePage, BadgeUpdateRequest, DevProductPage, GamePassPage, ProductUpdateRequest,
     SubscriptionProductPage,
 };
-use crate::sync::products::{MultiProduct, Product};
+use crate::sync::products::{MultiProduct, Product, SubscriptionEntry};
 
 pub async fn fetch_all_products(universe_id: u64) -> Result<Vec<MultiProduct>> {
     let gamepasses = fetch_all_gamepasses(universe_id).await?;
@@ -33,7 +33,7 @@ pub async fn fetch_all_products(universe_id: u64) -> Result<Vec<MultiProduct>> {
     all_products.extend(
         subscriptions
             .into_iter()
-            .map(|x| MultiProduct::Subscription(Product::from(&x))),
+            .map(|x| MultiProduct::Subscription(SubscriptionEntry::from(&x))),
     );
 
     all_products.extend(
