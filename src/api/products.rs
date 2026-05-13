@@ -1,4 +1,4 @@
-use log::warn;
+use log::{info, warn};
 use reqwest::Response;
 
 use super::API_CLIENT;
@@ -16,6 +16,17 @@ async fn check_status(resp: Response, op: &str) -> Result<Response> {
     } else {
         Err(format!("{op}: HTTP {status} \u{2014} {trimmed}").into())
     }
+}
+
+async fn json_or_explain<T: serde::de::DeserializeOwned>(
+    resp: Response,
+    op: &str,
+) -> Result<T> {
+    let body = resp.text().await?;
+    serde_json::from_str::<T>(&body).map_err(|e| {
+        let preview: String = body.chars().take(500).collect();
+        format!("{op}: decoding response body failed: {e} \u{2014} body[..500]: {preview}").into()
+    })
 }
 
 use crate::Result;
@@ -92,10 +103,11 @@ pub async fn fetch_all_badges(universe_id: u64) -> Result<Vec<Badge>> {
             return Ok(vec![]);
         }
 
-        let resp: BadgePage = resp.error_for_status()?.json().await?;
-        badges.extend(resp.data);
+        let resp = check_status(resp, "list badges").await?;
+        let page: BadgePage = json_or_explain(resp, "list badges").await?;
+        badges.extend(page.data);
 
-        match resp.next_page_cursor {
+        match page.next_page_cursor {
             Some(c) if !c.is_empty() => {
                 cursor = c;
             }
@@ -103,6 +115,7 @@ pub async fn fetch_all_badges(universe_id: u64) -> Result<Vec<Badge>> {
         }
     }
 
+    info!("fetched {} badges", badges.len());
     Ok(badges)
 }
 
@@ -153,11 +166,12 @@ pub async fn fetch_all_subscriptions(universe_id: u64) -> Result<Vec<Subscriptio
             return Ok(vec![]);
         }
 
-        let resp: SubscriptionProductPage = resp.error_for_status()?.json().await?;
+        let resp = check_status(resp, "list subscription-products").await?;
+        let page: SubscriptionProductPage =
+            json_or_explain(resp, "list subscription-products").await?;
+        subscriptions.extend(page.subscription_products);
 
-        subscriptions.extend(resp.subscription_products);
-
-        match resp.next_page_token {
+        match page.next_page_token {
             Some(cursor) if !cursor.is_empty() => {
                 page_cursor = cursor;
             }
@@ -165,6 +179,7 @@ pub async fn fetch_all_subscriptions(universe_id: u64) -> Result<Vec<Subscriptio
         }
     }
 
+    info!("fetched {} subscription products", subscriptions.len());
     Ok(subscriptions)
 }
 
@@ -186,11 +201,12 @@ pub async fn fetch_all_dev_products(universe_id: u64) -> Result<Vec<DevProduct>>
             req = req.query(&[("pageToken", page_cursor.clone())]);
         }
 
-        let resp: DevProductPage = req.send().await?.json().await?;
+        let resp = check_status(req.send().await?, "list dev products").await?;
+        let page: DevProductPage = json_or_explain(resp, "list dev products").await?;
 
-        products.extend(resp.developer_products);
+        products.extend(page.developer_products);
 
-        match resp.next_page_token {
+        match page.next_page_token {
             Some(cursor) => {
                 page_cursor = cursor;
             }
@@ -198,6 +214,7 @@ pub async fn fetch_all_dev_products(universe_id: u64) -> Result<Vec<DevProduct>>
         }
     }
 
+    info!("fetched {} dev products", products.len());
     Ok(products)
 }
 
@@ -219,11 +236,12 @@ pub async fn fetch_all_gamepasses(universe_id: u64) -> Result<Vec<GamePass>> {
             req = req.query(&[("pageToken", page_cursor.clone())]);
         }
 
-        let resp: GamePassPage = req.send().await?.json().await?;
+        let resp = check_status(req.send().await?, "list gamepasses").await?;
+        let page: GamePassPage = json_or_explain(resp, "list gamepasses").await?;
 
-        gamepasses.extend(resp.game_passes);
+        gamepasses.extend(page.game_passes);
 
-        match resp.next_page_token {
+        match page.next_page_token {
             Some(cursor) => {
                 page_cursor = cursor;
             }
@@ -231,6 +249,7 @@ pub async fn fetch_all_gamepasses(universe_id: u64) -> Result<Vec<GamePass>> {
         }
     }
 
+    info!("fetched {} gamepasses", gamepasses.len());
     Ok(gamepasses)
 }
 

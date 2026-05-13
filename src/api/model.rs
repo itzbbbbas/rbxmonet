@@ -64,20 +64,41 @@ pub struct ProductUpdateRequest {
     pub store_page_enabled: Option<bool>,
 }
 
+mod lenient_u64 {
+    use serde::{Deserialize, Deserializer};
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<u64, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Repr {
+            Num(u64),
+            Str(String),
+        }
+
+        match Repr::deserialize(deserializer)? {
+            Repr::Num(n) => Ok(n),
+            Repr::Str(s) => s.parse::<u64>().map_err(serde::de::Error::custom),
+        }
+    }
+}
+
 nest! {
     #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]*
     #[serde(rename_all = "camelCase")]*
     pub struct Badge {
-        #[serde(default)]
+        #[serde(default, deserialize_with = "lenient_u64::deserialize")]
         pub id: u64,
         #[serde(default)]
         pub name: String,
         #[serde(default)]
-        pub description: String,
+        pub description: Option<String>,
         #[serde(default)]
         pub enabled: bool,
         #[serde(default)]
-        pub icon_image_id: u64,
+        pub icon_image_id: Option<u64>,
     }
 }
 
@@ -179,7 +200,7 @@ impl From<&Badge> for Product {
             prefix: None,
             id: Some(b.id),
             name: b.name.clone(),
-            description: Some(b.description.clone()),
+            description: Some(b.description.clone().unwrap_or_default()),
             active: b.enabled,
             price: 0,
             regional_pricing: None,
