@@ -70,7 +70,7 @@ macro_rules! check_diff {
 
 impl VCSProducts {
     pub async fn get_products() -> Result<Self> {
-        let file_data = fs::read("products.toml").await?;
+        let file_data = fs::read("rbx-monets.toml").await?;
         let products: VCSProducts = toml::from_slice(&file_data)?;
         Ok(products)
     }
@@ -78,7 +78,7 @@ impl VCSProducts {
     pub async fn save_products(&self) -> Result<()> {
         let mut toml_products: toml_edit::DocumentMut;
 
-        if let Ok(data) = fs::read("products.toml").await {
+        if let Ok(data) = fs::read("rbx-monets.toml").await {
             let document_string = String::from_utf8(data.clone())?;
             toml_products = document_string.parse()?;
         } else {
@@ -125,7 +125,7 @@ impl VCSProducts {
         toml_products["gamepasses"] = toml_edit::Item::Table(gamepasses);
         toml_products["products"] = toml_edit::Item::Table(products);
 
-        fs::write("products.toml", toml_products.to_string()).await?;
+        fs::write("rbx-monets.toml", toml_products.to_string()).await?;
         Ok(())
     }
 
