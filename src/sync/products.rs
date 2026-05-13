@@ -39,6 +39,9 @@ nest! {
 
         #[serde(default)]
         pub products: HashMap<String, Product>,
+
+        #[serde(default)]
+        pub subscriptions: HashMap<String, Product>,
     }
 }
 
@@ -46,10 +49,12 @@ nest! {
 pub enum ProductType {
     GamePass,
     DevProduct,
+    Subscription,
 }
 pub enum MultiProduct {
     GamePass(Product),
     DevProduct(Product),
+    Subscription(Product),
 }
 
 macro_rules! check_diff {
@@ -88,6 +93,7 @@ impl VCSProducts {
         let mut metadata = get_toml_value!(toml_products, "metadata");
         let mut gamepasses = get_toml_value!(toml_products, "gamepasses");
         let mut products = get_toml_value!(toml_products, "products");
+        let mut subscriptions = get_toml_value!(toml_products, "subscriptions");
 
         if let Some(discount_prefix) = &self.metadata.discount_prefix {
             metadata["discount-prefix"] = toml_edit::value(discount_prefix.clone());
@@ -120,10 +126,14 @@ impl VCSProducts {
         for product in &self.products {
             products[&product.0] = product.1.into();
         }
+        for subscription in &self.subscriptions {
+            subscriptions[&subscription.0] = subscription.1.into();
+        }
 
         toml_products["metadata"] = toml_edit::Item::Table(metadata);
         toml_products["gamepasses"] = toml_edit::Item::Table(gamepasses);
         toml_products["products"] = toml_edit::Item::Table(products);
+        toml_products["subscriptions"] = toml_edit::Item::Table(subscriptions);
 
         fs::write("rbx-monets.toml", toml_products.to_string()).await?;
         Ok(())
@@ -184,6 +194,8 @@ impl VCSProducts {
         serialize(&mut contents, &self.gamepasses);
         contents += "\t},\n\n\tProducts = {\n";
         serialize(&mut contents, &self.products);
+        contents += "\t},\n\n\tSubscriptions = {\n";
+        serialize(&mut contents, &self.subscriptions);
         contents += "\t}\n}";
 
         file.write_all(contents.as_bytes()).await?;

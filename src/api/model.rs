@@ -64,8 +64,29 @@ pub struct ProductUpdateRequest {
     pub store_page_enabled: Option<bool>,
 }
 
+nest! {
+    #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]*
+    #[serde(rename_all = "camelCase")]*
+    pub struct Subscription {
+        #[serde(default)]
+        pub path: String,
+        #[serde(default)]
+        pub id: String,
+        #[serde(default)]
+        pub name: String,
+        #[serde(default)]
+        pub description: String,
+        #[serde(default)]
+        pub state: String,
+        pub basic_price_in_robux: Option<u64>,
+        pub duration: Option<String>,
+        pub product_type: Option<String>,
+    }
+}
+
 paginate_struct!(DevProduct, DevProductPage, developer_products);
 paginate_struct!(GamePass, GamePassPage, game_passes);
+paginate_struct!(Subscription, SubscriptionProductPage, subscription_products);
 
 impl From<&Product> for ProductUpdateRequest {
     fn from(p: &Product) -> Self {
@@ -113,6 +134,23 @@ impl From<&GamePass> for Product {
                 .as_ref()
                 .map_or(0, |pi| pi.default_price_in_robux as i64),
             regional_pricing: features.map(|f| f.iter().any(|i| i == "RegionalPricing")),
+        }
+    }
+}
+
+impl From<&Subscription> for Product {
+    fn from(s: &Subscription) -> Self {
+        let id = s.id.parse::<u64>().ok();
+        Self {
+            discount: None,
+            prefix: None,
+            id,
+            name: s.name.clone(),
+            description: Some(s.description.clone()),
+            active: s.state.eq_ignore_ascii_case("STATE_ACTIVE")
+                || s.state.eq_ignore_ascii_case("ACTIVE"),
+            price: s.basic_price_in_robux.unwrap_or(0) as i64,
+            regional_pricing: None,
         }
     }
 }

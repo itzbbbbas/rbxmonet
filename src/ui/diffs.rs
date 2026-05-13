@@ -95,6 +95,7 @@ impl DiffViewer {
                 let product_type = match pd.0 {
                     ProductType::GamePass => "GamePass",
                     ProductType::DevProduct => "DevProduct",
+                    ProductType::Subscription => "Subscription",
                 };
 
                 let content = vec![Line::from(format!(

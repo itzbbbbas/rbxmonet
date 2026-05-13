@@ -42,7 +42,32 @@ impl Uploader {
         has_empty_gamepasses || has_empty_devproducts
     }
 
+    fn warn_unsupported_subscription_creates(&self) {
+        let empty_subs: Vec<&String> = self
+            .local_products
+            .subscriptions
+            .iter()
+            .filter(|(_, s)| s.id.is_none())
+            .map(|(k, _)| k)
+            .collect();
+
+        if !empty_subs.is_empty() {
+            log::warn!(
+                "skipping {} subscription entr{} with no id ({}): subscriptions cannot be created via Open Cloud \u{2014} create them in the Creator Dashboard, then run `rbx-monets download`",
+                empty_subs.len(),
+                if empty_subs.len() == 1 { "y" } else { "ies" },
+                empty_subs
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+    }
+
     async fn upload_empty(&mut self, overwrite: bool) -> Result<()> {
+        self.warn_unsupported_subscription_creates();
+
         if !self.has_empty_products() {
             return Ok(());
         }
@@ -72,6 +97,10 @@ impl Uploader {
                         create_dev_product(universe_id, &update_request)
                             .await?
                             .product_id
+                    }
+
+                    ProductType::Subscription => {
+                        return Err("subscriptions cannot be created via Open Cloud".into());
                     }
                 };
 
@@ -201,9 +230,11 @@ impl Uploader {
                         match products.iter().find(|multi_product| match multi_product {
                             MultiProduct::GamePass(pass) => pass.id.unwrap() == id,
                             MultiProduct::DevProduct(prod) => prod.id.unwrap() == id,
+                            MultiProduct::Subscription(sub) => sub.id.unwrap() == id,
                         }) {
                             Some(MultiProduct::GamePass(pass)) => (ProductType::GamePass, pass),
                             Some(MultiProduct::DevProduct(prod)) => (ProductType::DevProduct, prod),
+                            Some(MultiProduct::Subscription(_)) => return None,
                             None => return None,
                         };
 
@@ -253,6 +284,10 @@ impl Uploader {
         info!("syncing {} product(s)", diffs.len());
 
         for (product_type, id) in diffs {
+            if matches!(product_type, ProductType::Subscription) {
+                continue;
+            }
+
             let mut local_product = match product_type {
                 ProductType::GamePass => self
                     .local_products
@@ -264,6 +299,7 @@ impl Uploader {
                     .products
                     .values()
                     .find(|prod| prod.id == Some(id)),
+                ProductType::Subscription => unreachable!(),
             }
             .unwrap()
             .clone();
@@ -284,6 +320,7 @@ impl Uploader {
                 ProductType::DevProduct => {
                     update_dev_product(universe_id, id, &update_request).await?;
                 }
+                ProductType::Subscription => unreachable!(),
             }
 
             info!("synced {:?} '{}' (id: {})", product_type, name, id);
@@ -304,7 +341,9 @@ impl Uploader {
 
         info!(
             "fetched {} local products, {} remote products",
-            local_products_data.gamepasses.len() + local_products_data.products.len(),
+            local_products_data.gamepasses.len()
+                + local_products_data.products.len()
+                + local_products_data.subscriptions.len(),
             remote_product_data.len()
         );
 

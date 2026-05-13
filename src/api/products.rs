@@ -1,13 +1,18 @@
+use log::warn;
+
 use super::API_CLIENT;
-use super::model::{DevProduct, GamePass};
+use super::model::{DevProduct, GamePass, Subscription};
 
 use crate::Result;
-use crate::api::model::{DevProductPage, GamePassPage, ProductUpdateRequest};
+use crate::api::model::{
+    DevProductPage, GamePassPage, ProductUpdateRequest, SubscriptionProductPage,
+};
 use crate::sync::products::{MultiProduct, Product};
 
 pub async fn fetch_all_products(universe_id: u64) -> Result<Vec<MultiProduct>> {
     let gamepasses = fetch_all_gamepasses(universe_id).await?;
     let products = fetch_all_dev_products(universe_id).await?;
+    let subscriptions = fetch_all_subscriptions(universe_id).await?;
 
     let mut all_products: Vec<MultiProduct> = Vec::new();
 
@@ -23,7 +28,60 @@ pub async fn fetch_all_products(universe_id: u64) -> Result<Vec<MultiProduct>> {
             .map(|x| MultiProduct::DevProduct(Product::from(&x))),
     );
 
+    all_products.extend(
+        subscriptions
+            .into_iter()
+            .map(|x| MultiProduct::Subscription(Product::from(&x))),
+    );
+
     Ok(all_products)
+}
+
+pub async fn fetch_all_subscriptions(universe_id: u64) -> Result<Vec<Subscription>> {
+    let mut subscriptions = vec![];
+
+    let page_size = 100;
+    let mut page_cursor: String = String::default();
+
+    loop {
+        let mut req = API_CLIENT
+            .get(&format!(
+                "https://apis.roblox.com/cloud/v2/universes/{}/subscription-products",
+                universe_id
+            ))
+            .query(&[("maxPageSize", page_size.to_string())]);
+
+        if !page_cursor.is_empty() {
+            req = req.query(&[("pageToken", page_cursor.clone())]);
+        }
+
+        let resp = req.send().await?;
+        let status = resp.status();
+
+        if status == reqwest::StatusCode::NOT_FOUND
+            || status == reqwest::StatusCode::FORBIDDEN
+            || status == reqwest::StatusCode::UNAUTHORIZED
+        {
+            warn!(
+                "subscription-products endpoint returned {} for universe {} \u{2014} skipping subscriptions",
+                status, universe_id
+            );
+            return Ok(vec![]);
+        }
+
+        let resp: SubscriptionProductPage = resp.error_for_status()?.json().await?;
+
+        subscriptions.extend(resp.subscription_products);
+
+        match resp.next_page_token {
+            Some(cursor) if !cursor.is_empty() => {
+                page_cursor = cursor;
+            }
+            _ => break,
+        }
+    }
+
+    Ok(subscriptions)
 }
 
 pub async fn fetch_all_dev_products(universe_id: u64) -> Result<Vec<DevProduct>> {
