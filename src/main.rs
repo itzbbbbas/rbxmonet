@@ -39,11 +39,13 @@ enum Commands {
 
 fn init_logging() {
     if std::env::var("RUST_LOG").is_err() {
-        if cfg!(debug_assertions) {
-            unsafe { std::env::set_var("RUST_LOG", "off,rbx_product=debug") }
+        let crate_name = env!("CARGO_PKG_NAME");
+        let filter = if cfg!(debug_assertions) {
+            format!("off,{crate_name}=debug")
         } else {
-            unsafe { std::env::set_var("RUST_LOG", "rbx_product=info") }
-        }
+            format!("{crate_name}=info")
+        };
+        unsafe { std::env::set_var("RUST_LOG", filter) }
     }
 
     env_logger::init();
@@ -117,5 +119,6 @@ async fn main() {
 
     if let Err(e) = result {
         log::error!("Error: {}", e);
+        eprintln!("error: {e}");
     }
 }
