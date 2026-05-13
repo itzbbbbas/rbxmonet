@@ -1,16 +1,16 @@
 [package]
-name = "rbx_monets"
-version = "0.1.8"
+name = "rbxmonet"
+version = "0.1.9"
 edition = "2024"
 authors = ["Jack Fox <jack@infernal.io>"]
 description = "Fork of rbx-products — generates monets.luau without type cast."
 license = "MIT"
-repository = "https://github.com/itzbbbbas/rbx-monets"
+repository = "https://github.com/itzbbbbas/rbxmonet"
 readme = "README.md"
 include = ["**/*.rs"]
 
 [[bin]]
-name = "rbx-monets"
+name = "rbxmonet"
 path = "src/main.rs"
 
 

@@ -33,7 +33,7 @@ enum Commands {
     Download,
     /// Syncs products between file and universe
     Sync,
-    /// Regenerates the Luau file from rbx-monets.toml without any network calls
+    /// Regenerates the Luau file from rbxmonet.toml without any network calls
     RegenLuau,
 }
 
@@ -76,8 +76,8 @@ async fn main() {
         Commands::Init => {
             info!("Initializing products file...");
 
-            if std::fs::exists("rbx-monets.toml").unwrap() {
-                log::error!("rbx-monets.toml already exists. Aborting initialization.");
+            if std::fs::exists("rbxmonet.toml").unwrap() {
+                log::error!("rbxmonet.toml already exists. Aborting initialization.");
                 return;
             }
 
@@ -95,16 +95,16 @@ async fn main() {
 
             match products.save_products().await {
                 Ok(_) => {
-                    info!("rbx-monets.toml initialized successfully.");
+                    info!("rbxmonet.toml initialized successfully.");
                     Ok(())
                 }
-                Err(e) => Err(format!("Failed to initialize rbx-monets.toml: {}", e).into()),
+                Err(e) => Err(format!("Failed to initialize rbxmonet.toml: {}", e).into()),
             }
         }
         Commands::Download => Downloader::download(args.overwrite).await,
         Commands::Sync => Uploader::upload(args.overwrite).await,
         Commands::RegenLuau => {
-            info!("Regenerating Luau file from rbx-monets.toml...");
+            info!("Regenerating Luau file from rbxmonet.toml...");
             match sync::products::VCSProducts::get_products().await {
                 Ok(products) => match products.serialize_luau().await {
                     Ok(_) => {
@@ -113,7 +113,7 @@ async fn main() {
                     }
                     Err(e) => Err(format!("Failed to serialize Luau: {}", e).into()),
                 },
-                Err(e) => Err(format!("Failed to read rbx-monets.toml: {}", e).into()),
+                Err(e) => Err(format!("Failed to read rbxmonet.toml: {}", e).into()),
             }
         }
     };

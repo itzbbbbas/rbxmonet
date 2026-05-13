@@ -53,7 +53,7 @@ impl Uploader {
 
         if !empty_subs.is_empty() {
             log::warn!(
-                "skipping {} subscription entr{} with no id ({}): subscriptions cannot be created via Open Cloud \u{2014} create them in the Creator Dashboard, then run `rbx-monets download`",
+                "skipping {} subscription entr{} with no id ({}): subscriptions cannot be created via Open Cloud \u{2014} create them in the Creator Dashboard, then run `rbxmonet download`",
                 empty_subs.len(),
                 if empty_subs.len() == 1 { "y" } else { "ies" },
                 empty_subs

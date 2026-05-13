@@ -59,7 +59,7 @@ jobs:
         name: Build (${{ matrix.target }})
         runs-on: ${{ matrix.os }}
         env:
-            BIN: rbx-monets
+            BIN: rbxmonet
         steps:
             - uses: actions/checkout@v4
               with:

@@ -1,6 +1,7 @@
 /target
 .env
 
+rbxmonet.toml
 rbx-monets.toml
 products.toml
 products.luau

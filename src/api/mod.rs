@@ -19,7 +19,7 @@ lazy_static::lazy_static! {
         //         .build_with_max_retries(5);
 
         let client = Client::builder()
-            .user_agent(format!("rbx_product/{}", env!("CARGO_PKG_VERSION")))
+            .user_agent(format!("rbxmonet/{}", env!("CARGO_PKG_VERSION")))
             .build().unwrap();
 
         ClientBuilder::new(client)

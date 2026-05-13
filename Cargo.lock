@@ -1960,8 +1960,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "rbx_monets"
-version = "0.1.8"
+name = "rbxmonet"
+version = "0.1.9"
 dependencies = [
  "async-trait",
  "clap",
