@@ -23,7 +23,8 @@ impl Downloader {
             "fetched {} local products, {} remote products",
             local_products_data.gamepasses.len()
                 + local_products_data.products.len()
-                + local_products_data.subscriptions.len(),
+                + local_products_data.subscriptions.len()
+                + local_products_data.badges.len(),
             remote_product_data.len()
         );
 
@@ -51,6 +52,7 @@ impl Downloader {
                 MultiProduct::GamePass(prod) => (prod.clone(), ProductType::GamePass),
                 MultiProduct::DevProduct(prod) => (prod.clone(), ProductType::DevProduct),
                 MultiProduct::Subscription(prod) => (prod.clone(), ProductType::Subscription),
+                MultiProduct::Badge(prod) => (prod.clone(), ProductType::Badge),
             };
 
             let name = format_name(canonical_name(product.name.clone(), &filters));
@@ -72,6 +74,11 @@ impl Downloader {
                             == product.id.map(|id| id as i64).unwrap_or(-1)
                     })
                 }
+
+                ProductType::Badge => local_products_data.badges.iter().find(|(_, x)| {
+                    x.id.map(|id| id as i64).unwrap_or(-1)
+                        == product.id.map(|id| id as i64).unwrap_or(-1)
+                }),
             };
 
             let mut product = Product {
@@ -143,6 +150,7 @@ impl Downloader {
                 ProductType::Subscription => {
                     local_products_data.subscriptions.insert(key, product)
                 }
+                ProductType::Badge => local_products_data.badges.insert(key, product),
             };
         });
 

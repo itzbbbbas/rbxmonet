@@ -1,9 +1,10 @@
 use log::info;
 
 use crate::Result;
-use crate::api::model::ProductUpdateRequest;
+use crate::api::model::{BadgeUpdateRequest, ProductUpdateRequest};
 use crate::api::products::{
-    create_dev_product, create_gamepass, fetch_all_products, update_dev_product, update_gamepass,
+    create_dev_product, create_gamepass, fetch_all_products, update_badge, update_dev_product,
+    update_gamepass,
 };
 use crate::sync::products::{MultiProduct, Product, ProductType, VCSProducts};
 use crate::ui::confirm::{ConfirmState, ConfirmViewer};
@@ -42,6 +43,25 @@ impl Uploader {
         has_empty_gamepasses || has_empty_devproducts
     }
 
+    fn warn_unsupported_badge_creates(&self) {
+        let empty: Vec<&String> = self
+            .local_products
+            .badges
+            .iter()
+            .filter(|(_, b)| b.id.is_none())
+            .map(|(k, _)| k)
+            .collect();
+
+        if !empty.is_empty() {
+            log::warn!(
+                "skipping {} badge entr{} with no id ({}): badge create requires an icon file upload, which rbxmonet does not yet support \u{2014} create badges in the Creator Dashboard, then run `rbxmonet download`",
+                empty.len(),
+                if empty.len() == 1 { "y" } else { "ies" },
+                empty.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
+            );
+        }
+    }
+
     fn warn_unsupported_subscription_creates(&self) {
         let empty_subs: Vec<&String> = self
             .local_products
@@ -67,6 +87,7 @@ impl Uploader {
 
     async fn upload_empty(&mut self, overwrite: bool) -> Result<()> {
         self.warn_unsupported_subscription_creates();
+        self.warn_unsupported_badge_creates();
 
         if !self.has_empty_products() {
             return Ok(());
@@ -101,6 +122,12 @@ impl Uploader {
 
                     ProductType::Subscription => {
                         return Err("subscriptions cannot be created via Open Cloud".into());
+                    }
+
+                    ProductType::Badge => {
+                        return Err(
+                            "badge create requires an icon file upload (not yet supported)".into(),
+                        );
                     }
                 };
 
@@ -216,6 +243,7 @@ impl Uploader {
 
         all_local_products.extend(self.local_products.gamepasses.values().cloned());
         all_local_products.extend(self.local_products.products.values().cloned());
+        all_local_products.extend(self.local_products.badges.values().cloned());
 
         product_diffs.extend(
             all_local_products
@@ -231,10 +259,12 @@ impl Uploader {
                             MultiProduct::GamePass(pass) => pass.id.unwrap() == id,
                             MultiProduct::DevProduct(prod) => prod.id.unwrap() == id,
                             MultiProduct::Subscription(sub) => sub.id.unwrap() == id,
+                            MultiProduct::Badge(b) => b.id.unwrap() == id,
                         }) {
                             Some(MultiProduct::GamePass(pass)) => (ProductType::GamePass, pass),
                             Some(MultiProduct::DevProduct(prod)) => (ProductType::DevProduct, prod),
                             Some(MultiProduct::Subscription(_)) => return None,
+                            Some(MultiProduct::Badge(badge)) => (ProductType::Badge, badge),
                             None => return None,
                         };
 
@@ -299,6 +329,11 @@ impl Uploader {
                     .products
                     .values()
                     .find(|prod| prod.id == Some(id)),
+                ProductType::Badge => self
+                    .local_products
+                    .badges
+                    .values()
+                    .find(|b| b.id == Some(id)),
                 ProductType::Subscription => unreachable!(),
             }
             .unwrap()
@@ -319,6 +354,10 @@ impl Uploader {
                 }
                 ProductType::DevProduct => {
                     update_dev_product(universe_id, id, &update_request).await?;
+                }
+                ProductType::Badge => {
+                    let badge_request = BadgeUpdateRequest::from(&local_product);
+                    update_badge(id, &badge_request).await?;
                 }
                 ProductType::Subscription => unreachable!(),
             }
@@ -343,7 +382,8 @@ impl Uploader {
             "fetched {} local products, {} remote products",
             local_products_data.gamepasses.len()
                 + local_products_data.products.len()
-                + local_products_data.subscriptions.len(),
+                + local_products_data.subscriptions.len()
+                + local_products_data.badges.len(),
             remote_product_data.len()
         );
 

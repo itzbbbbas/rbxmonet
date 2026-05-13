@@ -1,11 +1,12 @@
 use log::warn;
 
 use super::API_CLIENT;
-use super::model::{DevProduct, GamePass, Subscription};
+use super::model::{Badge, DevProduct, GamePass, Subscription};
 
 use crate::Result;
 use crate::api::model::{
-    DevProductPage, GamePassPage, ProductUpdateRequest, SubscriptionProductPage,
+    BadgePage, BadgeUpdateRequest, DevProductPage, GamePassPage, ProductUpdateRequest,
+    SubscriptionProductPage,
 };
 use crate::sync::products::{MultiProduct, Product};
 
@@ -13,6 +14,7 @@ pub async fn fetch_all_products(universe_id: u64) -> Result<Vec<MultiProduct>> {
     let gamepasses = fetch_all_gamepasses(universe_id).await?;
     let products = fetch_all_dev_products(universe_id).await?;
     let subscriptions = fetch_all_subscriptions(universe_id).await?;
+    let badges = fetch_all_badges(universe_id).await?;
 
     let mut all_products: Vec<MultiProduct> = Vec::new();
 
@@ -34,7 +36,73 @@ pub async fn fetch_all_products(universe_id: u64) -> Result<Vec<MultiProduct>> {
             .map(|x| MultiProduct::Subscription(Product::from(&x))),
     );
 
+    all_products.extend(
+        badges
+            .into_iter()
+            .map(|x| MultiProduct::Badge(Product::from(&x))),
+    );
+
     Ok(all_products)
+}
+
+pub async fn fetch_all_badges(universe_id: u64) -> Result<Vec<Badge>> {
+    let mut badges = vec![];
+
+    let limit = 100;
+    let mut cursor: String = String::default();
+
+    loop {
+        let mut req = API_CLIENT
+            .get(&format!(
+                "https://badges.roblox.com/v1/universes/{}/badges",
+                universe_id
+            ))
+            .query(&[("limit", limit.to_string()), ("sortOrder", "Asc".to_string())]);
+
+        if !cursor.is_empty() {
+            req = req.query(&[("cursor", cursor.clone())]);
+        }
+
+        let resp = req.send().await?;
+        let status = resp.status();
+
+        if status == reqwest::StatusCode::NOT_FOUND
+            || status == reqwest::StatusCode::FORBIDDEN
+            || status == reqwest::StatusCode::UNAUTHORIZED
+        {
+            warn!(
+                "badges endpoint returned {} for universe {} \u{2014} skipping badges",
+                status, universe_id
+            );
+            return Ok(vec![]);
+        }
+
+        let resp: BadgePage = resp.error_for_status()?.json().await?;
+        badges.extend(resp.data);
+
+        match resp.next_page_cursor {
+            Some(c) if !c.is_empty() => {
+                cursor = c;
+            }
+            _ => break,
+        }
+    }
+
+    Ok(badges)
+}
+
+pub async fn update_badge(badge_id: u64, update: &BadgeUpdateRequest) -> Result<()> {
+    API_CLIENT
+        .patch(&format!(
+            "https://badges.roblox.com/v1/badges/{}",
+            badge_id
+        ))
+        .json(update)
+        .send()
+        .await?
+        .error_for_status()?;
+
+    Ok(())
 }
 
 pub async fn fetch_all_subscriptions(universe_id: u64) -> Result<Vec<Subscription>> {

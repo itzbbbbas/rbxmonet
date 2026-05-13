@@ -96,6 +96,7 @@ impl DiffViewer {
                     ProductType::GamePass => "GamePass",
                     ProductType::DevProduct => "DevProduct",
                     ProductType::Subscription => "Subscription",
+                    ProductType::Badge => "Badge",
                 };
 
                 let content = vec![Line::from(format!(

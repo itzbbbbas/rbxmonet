@@ -42,6 +42,9 @@ nest! {
 
         #[serde(default)]
         pub subscriptions: HashMap<String, Product>,
+
+        #[serde(default)]
+        pub badges: HashMap<String, Product>,
     }
 }
 
@@ -50,11 +53,13 @@ pub enum ProductType {
     GamePass,
     DevProduct,
     Subscription,
+    Badge,
 }
 pub enum MultiProduct {
     GamePass(Product),
     DevProduct(Product),
     Subscription(Product),
+    Badge(Product),
 }
 
 macro_rules! check_diff {
@@ -94,6 +99,7 @@ impl VCSProducts {
         let mut gamepasses = get_toml_value!(toml_products, "gamepasses");
         let mut products = get_toml_value!(toml_products, "products");
         let mut subscriptions = get_toml_value!(toml_products, "subscriptions");
+        let mut badges = get_toml_value!(toml_products, "badges");
 
         if let Some(discount_prefix) = &self.metadata.discount_prefix {
             metadata["discount-prefix"] = toml_edit::value(discount_prefix.clone());
@@ -129,11 +135,15 @@ impl VCSProducts {
         for subscription in &self.subscriptions {
             subscriptions[&subscription.0] = subscription.1.into();
         }
+        for badge in &self.badges {
+            badges[&badge.0] = badge.1.into();
+        }
 
         toml_products["metadata"] = toml_edit::Item::Table(metadata);
         toml_products["gamepasses"] = toml_edit::Item::Table(gamepasses);
         toml_products["products"] = toml_edit::Item::Table(products);
         toml_products["subscriptions"] = toml_edit::Item::Table(subscriptions);
+        toml_products["badges"] = toml_edit::Item::Table(badges);
 
         fs::write("rbxmonet.toml", toml_products.to_string()).await?;
         Ok(())
@@ -196,6 +206,8 @@ impl VCSProducts {
         serialize(&mut contents, &self.products);
         contents += "\t},\n\n\tSubscriptions = {\n";
         serialize(&mut contents, &self.subscriptions);
+        contents += "\t},\n\n\tBadges = {\n";
+        serialize(&mut contents, &self.badges);
         contents += "\t}\n}";
 
         file.write_all(contents.as_bytes()).await?;

@@ -67,6 +67,40 @@ pub struct ProductUpdateRequest {
 nest! {
     #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]*
     #[serde(rename_all = "camelCase")]*
+    pub struct Badge {
+        #[serde(default)]
+        pub id: u64,
+        #[serde(default)]
+        pub name: String,
+        #[serde(default)]
+        pub description: String,
+        #[serde(default)]
+        pub enabled: bool,
+        #[serde(default)]
+        pub icon_image_id: u64,
+    }
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BadgePage {
+    #[serde(default)]
+    pub data: Vec<Badge>,
+    #[serde(default)]
+    pub next_page_cursor: Option<String>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BadgeUpdateRequest {
+    pub name: String,
+    pub description: String,
+    pub enabled: bool,
+}
+
+nest! {
+    #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]*
+    #[serde(rename_all = "camelCase")]*
     pub struct Subscription {
         #[serde(default)]
         pub path: String,
@@ -134,6 +168,31 @@ impl From<&GamePass> for Product {
                 .as_ref()
                 .map_or(0, |pi| pi.default_price_in_robux as i64),
             regional_pricing: features.map(|f| f.iter().any(|i| i == "RegionalPricing")),
+        }
+    }
+}
+
+impl From<&Badge> for Product {
+    fn from(b: &Badge) -> Self {
+        Self {
+            discount: None,
+            prefix: None,
+            id: Some(b.id),
+            name: b.name.clone(),
+            description: Some(b.description.clone()),
+            active: b.enabled,
+            price: 0,
+            regional_pricing: None,
+        }
+    }
+}
+
+impl From<&Product> for BadgeUpdateRequest {
+    fn from(p: &Product) -> Self {
+        Self {
+            name: p.get_title(),
+            description: p.description.clone().unwrap_or_default(),
+            enabled: p.active,
         }
     }
 }

@@ -91,6 +91,7 @@ async fn main() {
                 gamepasses: HashMap::new(),
                 products: HashMap::new(),
                 subscriptions: HashMap::new(),
+                badges: HashMap::new(),
             };
 
             match products.save_products().await {

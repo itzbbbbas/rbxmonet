@@ -83,6 +83,7 @@ RBX_API_KEY=...
 | Game passes   | `game-pass:read`, `game-pass:write`                                             |
 | Dev products  | `developer-product:read`, `developer-product:write`                             |
 | Subscriptions | `universe.subscription-product.subscription:read` (read only — see Limitations) |
+| Badges        | `legacy-universe.badge:write`, `legacy-badge:manage` (update only — see Limitations) |
 
 ---
 
@@ -140,6 +141,13 @@ name            = "Gold Tier"
 description     = "Monthly gold perks"
 price           = 99                       # Robux
 active          = true
+
+# ------- Badges (download + update name/description/enabled via API; create requires icon upload) -------
+[badges.first-win]
+id              = 2147483648
+name            = "First Win"
+description     = "Awarded for your first victory"
+active          = true                     # maps to badge `enabled`
 ```
 
 ### Slug keys
@@ -211,6 +219,10 @@ return {
 
     Subscriptions = {
         ["gold-tier"] = { id = 1234567890, price = 99, name = "Gold Tier", description = "Monthly gold perks" }
+    },
+
+    Badges = {
+        ["first-win"] = { id = 2147483648, price = 0, name = "First Win", description = "Awarded for your first victory" }
     }
 }
 ```
@@ -281,7 +293,7 @@ Confirm prompt:
 ## ⚠️ Limitations
 
 - **Subscriptions are read-only.** Roblox Open Cloud does not expose create/update for subscription-products as of 2026-05. Create them in the Creator Dashboard, then run `rbxmonet download` to pull the new id into `rbxmonet.toml`.
-- **Badges:** not yet supported (planned for a follow-up release).
+- **Badges support download + update only.** Create requires an icon file upload that is not wired yet — create the badge in the Creator Dashboard, then run `rbxmonet download`. `rbxmonet sync` will PATCH `name`, `description`, and `enabled` for existing badges.
 - **Icon assets:** game-pass and dev-product icon upload is not yet wired.
 - **Subscriptions table when `luau-file` is set on a universe with no subscriptions:** an empty `Subscriptions = {}` block is emitted.
 
