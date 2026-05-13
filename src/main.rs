@@ -33,6 +33,8 @@ enum Commands {
     Download,
     /// Syncs products between file and universe
     Sync,
+    /// Regenerates the Luau file from products.toml without any network calls
+    RegenLuau,
 }
 
 fn init_logging() {
@@ -98,6 +100,19 @@ async fn main() {
         }
         Commands::Download => Downloader::download(args.overwrite).await,
         Commands::Sync => Uploader::upload(args.overwrite).await,
+        Commands::RegenLuau => {
+            info!("Regenerating Luau file from products.toml...");
+            match sync::products::VCSProducts::get_products().await {
+                Ok(products) => match products.serialize_luau().await {
+                    Ok(_) => {
+                        info!("Luau file regenerated successfully.");
+                        Ok(())
+                    }
+                    Err(e) => Err(format!("Failed to serialize Luau: {}", e).into()),
+                },
+                Err(e) => Err(format!("Failed to read products.toml: {}", e).into()),
+            }
+        }
     };
 
     if let Err(e) = result {

@@ -162,9 +162,9 @@ impl VCSProducts {
         contents += "export type Product = { id: number, price: number }\n\n";
         contents += "return {\n\tGamepasses = {\n";
         serialize(&mut contents, &self.gamepasses);
-        contents += "\t} :: {[string]: Product},\n\n\tProducts = {\n";
+        contents += "\t},\n\n\tProducts = {\n";
         serialize(&mut contents, &self.products);
-        contents += "\t} :: {[string]: Product}\n}";
+        contents += "\t}\n}";
 
         file.write_all(contents.as_bytes()).await?;
 
