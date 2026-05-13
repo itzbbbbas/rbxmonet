@@ -1,7 +1,22 @@
 use log::warn;
+use reqwest::Response;
 
 use super::API_CLIENT;
 use super::model::{Badge, DevProduct, GamePass, Subscription};
+
+async fn check_status(resp: Response, op: &str) -> Result<Response> {
+    let status = resp.status();
+    if status.is_success() {
+        return Ok(resp);
+    }
+    let body = resp.text().await.unwrap_or_default();
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        Err(format!("{op}: HTTP {status}").into())
+    } else {
+        Err(format!("{op}: HTTP {status} \u{2014} {trimmed}").into())
+    }
+}
 
 use crate::Result;
 use crate::api::model::{
@@ -92,15 +107,16 @@ pub async fn fetch_all_badges(universe_id: u64) -> Result<Vec<Badge>> {
 }
 
 pub async fn update_badge(badge_id: u64, update: &BadgeUpdateRequest) -> Result<()> {
-    API_CLIENT
+    let resp = API_CLIENT
         .patch(&format!(
             "https://badges.roblox.com/v1/badges/{}",
             badge_id
         ))
         .json(update)
         .send()
-        .await?
-        .error_for_status()?;
+        .await?;
+
+    check_status(resp, "update badge").await?;
 
     Ok(())
 }
@@ -223,15 +239,16 @@ pub async fn update_dev_product(
     product_id: u64,
     update: &ProductUpdateRequest,
 ) -> Result<()> {
-    API_CLIENT
+    let resp = API_CLIENT
         .patch(&format!(
             "https://apis.roblox.com/developer-products/v2/universes/{}/developer-products/{}",
             universe_id, product_id
         ))
         .multipart(update.into())
         .send()
-        .await?
-        .error_for_status()?;
+        .await?;
+
+    check_status(resp, "update dev product").await?;
 
     Ok(())
 }
@@ -241,15 +258,16 @@ pub async fn update_gamepass(
     game_pass_id: u64,
     update: &ProductUpdateRequest,
 ) -> Result<()> {
-    API_CLIENT
+    let resp = API_CLIENT
         .patch(&format!(
             "https://apis.roblox.com/game-passes/v1/universes/{}/game-passes/{}",
             universe_id, game_pass_id
         ))
         .multipart(update.into())
         .send()
-        .await?
-        .error_for_status()?;
+        .await?;
+
+    check_status(resp, "update gamepass").await?;
 
     Ok(())
 }
@@ -258,36 +276,32 @@ pub async fn create_dev_product(
     universe_id: u64,
     product: &ProductUpdateRequest,
 ) -> Result<DevProduct> {
-    let resp: DevProduct = API_CLIENT
+    let resp = API_CLIENT
         .post(&format!(
             "https://apis.roblox.com/developer-products/v2/universes/{}/developer-products",
             universe_id
         ))
         .multipart(product.into())
         .send()
-        .await?
-        .error_for_status()?
-        .json()
         .await?;
 
-    Ok(resp)
+    let resp = check_status(resp, "create dev product").await?;
+    Ok(resp.json().await?)
 }
 
 pub async fn create_gamepass(
     universe_id: u64,
     gamepass: &ProductUpdateRequest,
 ) -> Result<GamePass> {
-    let resp: GamePass = API_CLIENT
+    let resp = API_CLIENT
         .post(&format!(
             "https://apis.roblox.com/game-passes/v1/universes/{}/game-passes",
             universe_id
         ))
         .multipart(gamepass.into())
         .send()
-        .await?
-        .error_for_status()?
-        .json()
         .await?;
 
-    Ok(resp)
+    let resp = check_status(resp, "create gamepass").await?;
+    Ok(resp.json().await?)
 }
