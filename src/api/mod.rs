@@ -5,7 +5,9 @@ use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 // use reqwest_retry::{RetryTransientMiddleware, policies::ExponentialBackoff};
 use tokio::sync::Mutex;
 
-use crate::api::middleware::{RobloxAuthMiddleware, RobloxRateLimitMiddleware};
+use crate::api::middleware::{
+    RobloxAuthMiddleware, RobloxRateLimitMiddleware, RobloxXsrfMiddleware,
+};
 
 mod middleware;
 pub mod model;
@@ -24,6 +26,7 @@ lazy_static::lazy_static! {
 
         ClientBuilder::new(client)
             .with(RobloxAuthMiddleware::new())
+            .with(RobloxXsrfMiddleware::new())
             .with(RobloxRateLimitMiddleware::new().with_max_429_retries(5))
             // .with(RetryTransientMiddleware::new_with_policy(retry_policy))
             .build()
