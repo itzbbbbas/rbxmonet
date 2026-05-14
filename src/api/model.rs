@@ -2,7 +2,7 @@ use nestify::nest;
 use reqwest::multipart::Form;
 use serde::{Deserialize, Serialize};
 
-use crate::sync::products::{Product, SubscriptionEntry};
+use crate::sync::products::Product;
 
 macro_rules! paginate_struct {
     ($type:ty, $name:ident, $field:ident) => {
@@ -104,6 +104,13 @@ nest! {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct BadgeMetadata {
+    #[serde(default)]
+    pub badge_creation_price: u64,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BadgePage {
     #[serde(default)]
     pub data: Vec<Badge>,
@@ -119,29 +126,8 @@ pub struct BadgeUpdateRequest {
     pub enabled: bool,
 }
 
-nest! {
-    #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]*
-    #[serde(rename_all = "camelCase")]*
-    pub struct Subscription {
-        #[serde(default)]
-        pub path: String,
-        #[serde(default)]
-        pub id: String,
-        #[serde(default)]
-        pub name: String,
-        #[serde(default)]
-        pub description: String,
-        #[serde(default)]
-        pub state: String,
-        pub basic_price_in_robux: Option<u64>,
-        pub duration: Option<String>,
-        pub product_type: Option<String>,
-    }
-}
-
 paginate_struct!(DevProduct, DevProductPage, developer_products);
 paginate_struct!(GamePass, GamePassPage, game_passes);
-paginate_struct!(Subscription, SubscriptionProductPage, subscription_products);
 
 impl From<&Product> for ProductUpdateRequest {
     fn from(p: &Product) -> Self {
@@ -189,6 +175,8 @@ impl From<&GamePass> for Product {
                 .as_ref()
                 .map_or(0, |pi| pi.default_price_in_robux as i64),
             regional_pricing: features.map(|f| f.iter().any(|i| i == "RegionalPricing")),
+            icon: None,
+            path: None,
         }
     }
 }
@@ -204,6 +192,8 @@ impl From<&Badge> for Product {
             active: b.enabled,
             price: 0,
             regional_pricing: None,
+            icon: None,
+            path: None,
         }
     }
 }
@@ -214,27 +204,6 @@ impl From<&Product> for BadgeUpdateRequest {
             name: p.get_title(),
             description: p.description.clone().unwrap_or_default(),
             enabled: p.active,
-        }
-    }
-}
-
-impl From<&Subscription> for SubscriptionEntry {
-    fn from(s: &Subscription) -> Self {
-        let id = if s.id.is_empty() {
-            None
-        } else if s.id.starts_with("EXP-") {
-            Some(s.id.clone())
-        } else {
-            Some(format!("EXP-{}", s.id))
-        };
-
-        Self {
-            id,
-            name: s.name.clone(),
-            description: Some(s.description.clone()),
-            active: s.state.eq_ignore_ascii_case("STATE_ACTIVE")
-                || s.state.eq_ignore_ascii_case("ACTIVE"),
-            price: s.basic_price_in_robux.unwrap_or(0) as i64,
         }
     }
 }
@@ -258,6 +227,8 @@ impl From<&DevProduct> for Product {
                 .as_ref()
                 .map_or(0, |pi| pi.default_price_in_robux as i64),
             regional_pricing: features.map(|f| f.iter().any(|i| i == "RegionalPricing")),
+            icon: None,
+            path: None,
         }
     }
 }

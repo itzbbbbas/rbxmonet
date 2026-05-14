@@ -1,13 +1,15 @@
+use std::collections::HashSet;
+
 use log::info;
 
 use crate::Result;
-use crate::api::products::fetch_all_products;
-use crate::sync::products::{MultiProduct, Product, ProductType, SubscriptionEntry, VCSProducts};
+use crate::api::products::{RemoteSnapshot, fetch_all_products};
+use crate::sync::products::{MultiProduct, Product, ProductType, VCSProducts};
 use crate::utils::{canonical_name, format_name, is_censored};
 
 pub struct Downloader {
     local_products: VCSProducts,
-    remote_products: Vec<MultiProduct>,
+    remote_snapshot: RemoteSnapshot,
 }
 
 impl Downloader {
@@ -16,21 +18,20 @@ impl Downloader {
         let local_products_data = VCSProducts::get_products().await?;
 
         info!("fetching remote products");
-        let remote_product_data =
+        let remote_snapshot =
             fetch_all_products(local_products_data.metadata.universe_id).await?;
 
         info!(
             "fetched {} local products, {} remote products",
             local_products_data.gamepasses.len()
                 + local_products_data.products.len()
-                + local_products_data.subscriptions.len()
                 + local_products_data.badges.len(),
-            remote_product_data.len()
+            remote_snapshot.products.len()
         );
 
         Ok(Downloader {
             local_products: local_products_data,
-            remote_products: remote_product_data,
+            remote_snapshot,
         })
     }
 
@@ -38,7 +39,8 @@ impl Downloader {
         let downloader = Downloader::create().await?;
 
         let mut local_products_data = downloader.local_products;
-        let remote_product_data = downloader.remote_products;
+        let snapshot = downloader.remote_snapshot;
+        let remote_product_data = &snapshot.products;
 
         let filters = &local_products_data.metadata.name_filters;
 
@@ -48,54 +50,10 @@ impl Downloader {
         );
 
         remote_product_data.iter().for_each(|multi_product| {
-            // Subscriptions have string ids and a slimmer schema; handle separately.
-            if let MultiProduct::Subscription(sub) = multi_product {
-                let name = format_name(canonical_name(sub.name.clone(), &filters));
-
-                let existing_key = local_products_data
-                    .subscriptions
-                    .iter()
-                    .find(|(_, x)| x.id == sub.id)
-                    .map(|(k, _)| k.clone());
-
-                let key = existing_key.clone().unwrap_or_else(|| name.clone());
-                let existing_entry = existing_key
-                    .as_ref()
-                    .and_then(|k| local_products_data.subscriptions.get(k).cloned());
-
-                let merged = SubscriptionEntry {
-                    id: sub.id.clone(),
-                    name: if !overwrite
-                        && let Some(existing) = &existing_entry
-                    {
-                        existing.name.clone()
-                    } else {
-                        sub.name.clone()
-                    },
-                    description: if !overwrite
-                        && let Some(existing) = &existing_entry
-                    {
-                        existing.description.clone()
-                    } else {
-                        sub.description.clone()
-                    },
-                    active: sub.active,
-                    price: if let Some(existing) = &existing_entry {
-                        if overwrite { sub.price } else { existing.price }
-                    } else {
-                        sub.price
-                    },
-                };
-
-                local_products_data.subscriptions.insert(key, merged);
-                return;
-            }
-
             let (product, product_type): (Product, ProductType) = match multi_product {
                 MultiProduct::GamePass(prod) => (prod.clone(), ProductType::GamePass),
                 MultiProduct::DevProduct(prod) => (prod.clone(), ProductType::DevProduct),
                 MultiProduct::Badge(prod) => (prod.clone(), ProductType::Badge),
-                MultiProduct::Subscription(_) => unreachable!(),
             };
 
             let name = format_name(canonical_name(product.name.clone(), &filters));
@@ -115,8 +73,6 @@ impl Downloader {
                     x.id.map(|id| id as i64).unwrap_or(-1)
                         == product.id.map(|id| id as i64).unwrap_or(-1)
                 }),
-
-                ProductType::Subscription => unreachable!(),
             };
 
             let mut product = Product {
@@ -152,6 +108,8 @@ impl Downloader {
                 } else {
                     product.price
                 },
+                icon: existing.and_then(|(_, p)| p.icon.clone()),
+                path: existing.and_then(|(_, p)| p.path.clone()),
                 regional_pricing: if let Some(existing_product) = existing {
                     if overwrite {
                         product.regional_pricing
@@ -186,9 +144,10 @@ impl Downloader {
                 ProductType::GamePass => local_products_data.gamepasses.insert(key, product),
                 ProductType::DevProduct => local_products_data.products.insert(key, product),
                 ProductType::Badge => local_products_data.badges.insert(key, product),
-                ProductType::Subscription => unreachable!(),
             };
         });
+
+        prune_stale(&mut local_products_data, &snapshot);
 
         info!("finished merging products, saving to disk");
         local_products_data.save_products().await?;
@@ -197,5 +156,68 @@ impl Downloader {
         local_products_data.serialize_luau().await?;
 
         Ok(())
+    }
+}
+
+fn prune_stale(local: &mut VCSProducts, snapshot: &RemoteSnapshot) {
+    let mut remote_gamepass_ids: HashSet<u64> = HashSet::new();
+    let mut remote_devproduct_ids: HashSet<u64> = HashSet::new();
+    let mut remote_badge_ids: HashSet<u64> = HashSet::new();
+
+    for mp in &snapshot.products {
+        match mp {
+            MultiProduct::GamePass(p) => {
+                if let Some(id) = p.id {
+                    remote_gamepass_ids.insert(id);
+                }
+            }
+            MultiProduct::DevProduct(p) => {
+                if let Some(id) = p.id {
+                    remote_devproduct_ids.insert(id);
+                }
+            }
+            MultiProduct::Badge(p) => {
+                if let Some(id) = p.id {
+                    remote_badge_ids.insert(id);
+                }
+            }
+        }
+    }
+
+    if snapshot.gamepasses_fetched {
+        prune_section_u64(&mut local.gamepasses, &remote_gamepass_ids, "gamepass");
+    }
+    if snapshot.dev_products_fetched {
+        prune_section_u64(&mut local.products, &remote_devproduct_ids, "dev product");
+    }
+    if snapshot.badges_fetched {
+        prune_section_u64(&mut local.badges, &remote_badge_ids, "badge");
+    }
+}
+
+fn prune_section_u64(
+    section: &mut std::collections::HashMap<String, Product>,
+    remote_ids: &HashSet<u64>,
+    label: &str,
+) {
+    let to_drop: Vec<String> = section
+        .iter()
+        .filter(|(_, v)| match v.id {
+            Some(id) => !remote_ids.contains(&id),
+            None => false,
+        })
+        .map(|(k, _)| k.clone())
+        .collect();
+    if !to_drop.is_empty() {
+        info!(
+            "pruned {} {} entr{} no longer in remote: {} (use `git checkout rbxmonet.toml` to undo)",
+            to_drop.len(),
+            label,
+            if to_drop.len() == 1 { "y" } else { "ies" },
+            to_drop.join(", "),
+        );
+        for k in &to_drop {
+            section.remove(k);
+        }
     }
 }

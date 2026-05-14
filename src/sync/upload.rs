@@ -3,9 +3,11 @@ use log::info;
 use crate::Result;
 use crate::api::model::{BadgeUpdateRequest, ProductUpdateRequest};
 use crate::api::products::{
-    create_dev_product, create_gamepass, fetch_all_products, update_badge, update_dev_product,
-    update_gamepass,
+    create_badge, create_dev_product, create_gamepass, fetch_all_products, fetch_badge_metadata,
+    fetch_free_badges_quota, update_badge, update_dev_product, update_gamepass,
 };
+
+const DEFAULT_ICON: &str = "assets/Image/missing_texture.png";
 use crate::sync::products::{MultiProduct, Product, ProductType, VCSProducts};
 use crate::ui::confirm::{ConfirmState, ConfirmViewer};
 use crate::ui::diffs::{DiffViewer, ProductDiffs};
@@ -43,51 +45,93 @@ impl Uploader {
         has_empty_gamepasses || has_empty_devproducts
     }
 
-    fn warn_unsupported_badge_creates(&self) {
-        let empty: Vec<&String> = self
+    async fn upload_badge_creates(&mut self) -> Result<()> {
+        let universe_id = self.local_products.metadata.universe_id;
+
+        let slugs: Vec<String> = self
             .local_products
             .badges
             .iter()
             .filter(|(_, b)| b.id.is_none())
-            .map(|(k, _)| k)
+            .map(|(k, _)| k.clone())
             .collect();
 
-        if !empty.is_empty() {
-            log::warn!(
-                "skipping {} badge entr{} with no id ({}): badge create requires an icon file upload, which rbxmonet does not yet support \u{2014} create badges in the Creator Dashboard, then run `rbxmonet download`",
-                empty.len(),
-                if empty.len() == 1 { "y" } else { "ies" },
-                empty.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ")
-            );
+        if slugs.is_empty() {
+            return Ok(());
         }
-    }
 
-    fn warn_unsupported_subscription_creates(&self) {
-        let empty_subs: Vec<&String> = self
-            .local_products
-            .subscriptions
-            .iter()
-            .filter(|(_, s)| s.id.is_none())
-            .map(|(k, _)| k)
-            .collect();
-
-        if !empty_subs.is_empty() {
-            log::warn!(
-                "skipping {} subscription entr{} with no id ({}): subscriptions cannot be created via Open Cloud \u{2014} create them in the Creator Dashboard, then run `rbxmonet download`",
-                empty_subs.len(),
-                if empty_subs.len() == 1 { "y" } else { "ies" },
-                empty_subs
-                    .iter()
-                    .map(|s| s.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            );
+        let mut metadata_cost: Option<u64> = None;
+        let mut free_quota: Option<u64> = match fetch_free_badges_quota(universe_id).await {
+            Ok(q) => Some(q),
+            Err(e) => {
+                log::warn!("failed to fetch free-badges-quota: {}", e);
+                None
+            }
+        };
+        if let Some(q) = free_quota {
+            info!("free badge quota: {}", q);
         }
+
+        for slug in slugs {
+            let badge = match self.local_products.badges.get(&slug) {
+                Some(b) => b.clone(),
+                None => continue,
+            };
+
+            let icon_path = badge
+                .icon
+                .clone()
+                .unwrap_or_else(|| DEFAULT_ICON.to_string());
+
+            let expected_cost = if free_quota.unwrap_or(0) > 0 {
+                0
+            } else {
+                if metadata_cost.is_none() {
+                    match fetch_badge_metadata().await {
+                        Ok(md) => metadata_cost = Some(md.badge_creation_price),
+                        Err(e) => {
+                            log::error!("failed to fetch badge metadata: {}", e);
+                            return Ok(());
+                        }
+                    }
+                }
+                metadata_cost.unwrap_or(100)
+            };
+
+            let desc = badge.description.clone().unwrap_or_default();
+            match create_badge(
+                universe_id,
+                &badge.name,
+                &desc,
+                badge.active,
+                &icon_path,
+                expected_cost,
+            )
+            .await
+            {
+                Ok(new) => {
+                    info!(
+                        "created Badge '{}' (id: {}, cost: {} R$)",
+                        badge.name, new.id, expected_cost
+                    );
+                    if let Some(b) = self.local_products.badges.get_mut(&slug) {
+                        b.id = Some(new.id);
+                    }
+                    if let Some(q) = free_quota.as_mut()
+                        && *q > 0
+                    {
+                        *q -= 1;
+                    }
+                }
+                Err(e) => log::error!("failed to create badge '{}': {}", slug, e),
+            }
+        }
+
+        Ok(())
     }
 
     async fn upload_empty(&mut self, overwrite: bool) -> Result<()> {
-        self.warn_unsupported_subscription_creates();
-        self.warn_unsupported_badge_creates();
+        self.upload_badge_creates().await?;
 
         if !self.has_empty_products() {
             return Ok(());
@@ -107,27 +151,22 @@ impl Uploader {
         let upload_product =
             async |universe_id: u64, product: Product, product_type: ProductType| -> Result<u64> {
                 let update_request = ProductUpdateRequest::from(&product);
+                let icon_path = product.icon.as_deref();
                 let product_id = match product_type {
                     ProductType::GamePass => {
-                        create_gamepass(universe_id, &update_request)
+                        create_gamepass(universe_id, &update_request, icon_path)
                             .await?
                             .game_pass_id
                     }
 
                     ProductType::DevProduct => {
-                        create_dev_product(universe_id, &update_request)
+                        create_dev_product(universe_id, &update_request, icon_path)
                             .await?
                             .product_id
                     }
 
-                    ProductType::Subscription => {
-                        return Err("subscriptions cannot be created via Open Cloud".into());
-                    }
-
                     ProductType::Badge => {
-                        return Err(
-                            "badge create requires an icon file upload (not yet supported)".into(),
-                        );
+                        return Err("badge creates handled by upload_badge_creates".into());
                     }
                 };
 
@@ -234,7 +273,7 @@ impl Uploader {
         Ok(())
     }
 
-    async fn upload_modified(&mut self, overwrite: bool) -> Result<()> {
+    async fn upload_modified(&mut self, overwrite: bool, auto_confirm: bool) -> Result<()> {
         let mut product_diffs = vec![];
 
         let universe_id = self.local_products.metadata.universe_id.clone();
@@ -258,12 +297,10 @@ impl Uploader {
                         match products.iter().find(|multi_product| match multi_product {
                             MultiProduct::GamePass(pass) => pass.id.unwrap() == id,
                             MultiProduct::DevProduct(prod) => prod.id.unwrap() == id,
-                            MultiProduct::Subscription(_) => false,
                             MultiProduct::Badge(b) => b.id.unwrap() == id,
                         }) {
                             Some(MultiProduct::GamePass(pass)) => (ProductType::GamePass, pass),
                             Some(MultiProduct::DevProduct(prod)) => (ProductType::DevProduct, prod),
-                            Some(MultiProduct::Subscription(_)) => return None,
                             Some(MultiProduct::Badge(badge)) => (ProductType::Badge, badge),
                             None => return None,
                         };
@@ -289,7 +326,19 @@ impl Uploader {
 
         let diffs: Vec<(ProductType, u64)>;
 
-        if !overwrite {
+        if overwrite || auto_confirm {
+            diffs = all_diffs
+                .iter()
+                .cloned()
+                .map(|(product_type, diff)| (product_type, diff.id))
+                .collect::<Vec<_>>();
+            if auto_confirm && !overwrite {
+                info!(
+                    "auto-confirm: applying {} diff(s) without prompt",
+                    diffs.len()
+                );
+            }
+        } else {
             diffs = DiffViewer::confirm_diffs(all_diffs.iter().cloned().collect()).await;
 
             let apply = ConfirmViewer::show_prompt("Would you like to sync products?").await;
@@ -298,12 +347,6 @@ impl Uploader {
                 info!("user aborted sync.");
                 return Ok(());
             }
-        } else {
-            diffs = all_diffs
-                .iter()
-                .cloned()
-                .map(|(product_type, diff)| (product_type, diff.id))
-                .collect::<Vec<_>>();
         }
 
         if diffs.len() == 0 {
@@ -314,10 +357,6 @@ impl Uploader {
         info!("syncing {} product(s)", diffs.len());
 
         for (product_type, id) in diffs {
-            if matches!(product_type, ProductType::Subscription) {
-                continue;
-            }
-
             let mut local_product = match product_type {
                 ProductType::GamePass => self
                     .local_products
@@ -334,7 +373,6 @@ impl Uploader {
                     .badges
                     .values()
                     .find(|b| b.id == Some(id)),
-                ProductType::Subscription => unreachable!(),
             }
             .unwrap()
             .clone();
@@ -347,19 +385,19 @@ impl Uploader {
             );
 
             let update_request = ProductUpdateRequest::from(&local_product);
+            let icon_path = local_product.icon.as_deref();
 
             match product_type {
                 ProductType::GamePass => {
-                    update_gamepass(universe_id, id, &update_request).await?;
+                    update_gamepass(universe_id, id, &update_request, icon_path).await?;
                 }
                 ProductType::DevProduct => {
-                    update_dev_product(universe_id, id, &update_request).await?;
+                    update_dev_product(universe_id, id, &update_request, icon_path).await?;
                 }
                 ProductType::Badge => {
                     let badge_request = BadgeUpdateRequest::from(&local_product);
                     update_badge(id, &badge_request).await?;
                 }
-                ProductType::Subscription => unreachable!(),
             }
 
             info!("synced {:?} '{}' (id: {})", product_type, name, id);
@@ -375,30 +413,28 @@ impl Uploader {
         let local_products_data = VCSProducts::get_products().await?;
 
         info!("fetching remote products");
-        let remote_product_data =
-            fetch_all_products(local_products_data.metadata.universe_id).await?;
+        let snapshot = fetch_all_products(local_products_data.metadata.universe_id).await?;
 
         info!(
             "fetched {} local products, {} remote products",
             local_products_data.gamepasses.len()
                 + local_products_data.products.len()
-                + local_products_data.subscriptions.len()
                 + local_products_data.badges.len(),
-            remote_product_data.len()
+            snapshot.products.len()
         );
 
         Ok(Self {
             local_products: local_products_data,
-            remote_products: remote_product_data,
+            remote_products: snapshot.products,
         })
     }
 
-    pub async fn upload(overwrite: bool) -> Result<()> {
+    pub async fn upload(overwrite: bool, auto_confirm: bool) -> Result<()> {
         let mut uploader = Uploader::create().await?;
 
         let mut run_upload = async || -> Result<()> {
             uploader.upload_empty(overwrite).await?;
-            uploader.upload_modified(overwrite).await?;
+            uploader.upload_modified(overwrite, auto_confirm).await?;
 
             Ok(())
         };

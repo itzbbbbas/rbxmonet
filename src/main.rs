@@ -23,6 +23,9 @@ struct Args {
     yes: bool,
     #[arg(short = 'o', long, default_value_t = false)]
     overwrite: bool,
+    /// Skip diff viewer in `sync` — auto-confirm all changes
+    #[arg(short = 'a', long, default_value_t = false, global = true)]
+    auto_confirm: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -35,6 +38,12 @@ enum Commands {
     Sync,
     /// Regenerates the Luau file from rbxmonet.toml without any network calls
     RegenLuau,
+}
+
+fn env_truthy(key: &str) -> bool {
+    std::env::var(key)
+        .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
+        .unwrap_or(false)
 }
 
 fn init_logging() {
@@ -57,8 +66,18 @@ async fn main() {
     init_logging();
     let _ = color_eyre::install();
 
-    if let Some(token) = std::env::var("RBX_MONET_API_KEY").ok() {
-        api::set_api_token(token).await;
+    let api_key_set = std::env::var("RBX_MONET_API_KEY")
+        .ok()
+        .map(|v| !v.trim().is_empty())
+        .unwrap_or(false);
+    info!(
+        "auth: RBX_MONET_API_KEY={}",
+        if api_key_set { "set" } else { "MISSING" }
+    );
+    if api_key_set {
+        if let Some(token) = std::env::var("RBX_MONET_API_KEY").ok() {
+            api::set_api_token(token).await;
+        }
     }
 
     let args = Args::parse();
@@ -85,12 +104,14 @@ async fn main() {
                 metadata: sync::products::Metadata {
                     universe_id: 1234,
                     discount_prefix: Some("💲{}% OFF💲 ".to_string()),
-                    luau_file: Some("products.luau".to_string()),
                     name_filters: None,
+                },
+                codegen: sync::products::CodegenConfig {
+                    output: Some("products.luau".to_string()),
+                    ..Default::default()
                 },
                 gamepasses: HashMap::new(),
                 products: HashMap::new(),
-                subscriptions: HashMap::new(),
                 badges: HashMap::new(),
             };
 
@@ -103,7 +124,10 @@ async fn main() {
             }
         }
         Commands::Download => Downloader::download(args.overwrite).await,
-        Commands::Sync => Uploader::upload(args.overwrite).await,
+        Commands::Sync => {
+            let auto_confirm = args.auto_confirm || env_truthy("RBX_MONET_AUTO_CONFIRM");
+            Uploader::upload(args.overwrite, auto_confirm).await
+        }
         Commands::RegenLuau => {
             info!("Regenerating Luau file from rbxmonet.toml...");
             match sync::products::VCSProducts::get_products().await {

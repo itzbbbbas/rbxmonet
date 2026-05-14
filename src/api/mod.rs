@@ -1,13 +1,10 @@
 use std::sync::Arc;
 
-use reqwest::{Client, Url, cookie::Jar};
+use reqwest::Client;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
-// use reqwest_retry::{RetryTransientMiddleware, policies::ExponentialBackoff};
 use tokio::sync::Mutex;
 
-use crate::api::middleware::{
-    RobloxAuthMiddleware, RobloxRateLimitMiddleware, RobloxXsrfMiddleware,
-};
+use crate::api::middleware::{RobloxAuthMiddleware, RobloxRateLimitMiddleware};
 
 mod middleware;
 pub mod model;
@@ -16,35 +13,23 @@ pub mod products;
 lazy_static::lazy_static! {
     static ref API_TOKEN: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
 
-    static ref API_CLIENT: ClientWithMiddleware = {
-        // let retry_policy = ExponentialBackoff::builder()
-        //         .build_with_max_retries(5);
+    static ref OPEN_CLOUD_CLIENT: ClientWithMiddleware = build_open_cloud_client();
+}
 
-        let jar = Arc::new(Jar::default());
+fn build_open_cloud_client() -> ClientWithMiddleware {
+    let client = Client::builder()
+        .user_agent(format!("rbxmonet/{}", env!("CARGO_PKG_VERSION")))
+        .build()
+        .unwrap();
 
-        if let Ok(cookie) = std::env::var("RBX_MONET_ROBLOSECURITY") {
-            let cookie = cookie.trim();
-            if !cookie.is_empty() {
-                let url: Url = "https://www.roblox.com/".parse().unwrap();
-                jar.add_cookie_str(
-                    &format!(".ROBLOSECURITY={cookie}; Domain=.roblox.com; Path=/"),
-                    &url,
-                );
-            }
-        }
+    ClientBuilder::new(client)
+        .with(RobloxAuthMiddleware::new())
+        .with(RobloxRateLimitMiddleware::new().with_max_429_retries(5))
+        .build()
+}
 
-        let client = Client::builder()
-            .user_agent(format!("rbxmonet/{}", env!("CARGO_PKG_VERSION")))
-            .cookie_provider(jar)
-            .build().unwrap();
-
-        ClientBuilder::new(client)
-            .with(RobloxAuthMiddleware::new())
-            .with(RobloxXsrfMiddleware::new())
-            .with(RobloxRateLimitMiddleware::new().with_max_429_retries(5))
-            // .with(RetryTransientMiddleware::new_with_policy(retry_policy))
-            .build()
-    };
+pub fn open_cloud_client() -> &'static ClientWithMiddleware {
+    &OPEN_CLOUD_CLIENT
 }
 
 #[macro_export]

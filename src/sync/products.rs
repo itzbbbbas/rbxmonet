@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use dyn_fmt::AsStrFormatExt;
 use nestify::nest;
@@ -19,10 +19,23 @@ nest! {
     pub struct VCSProducts {
         pub metadata: pub struct Metadata {
             pub universe_id: u64,
-            pub luau_file: Option<String>,
             pub discount_prefix: Option<String>,
             #[serde(default, deserialize_with = "deserialize_regex_vec", serialize_with = "serialize_regex_vec")]
             pub name_filters: Option<Vec<Regex>>,
+        },
+
+        #[serde(default)]
+        pub codegen: pub struct CodegenConfig {
+            #[serde(default)]
+            pub output: Option<String>,
+            #[serde(default)]
+            pub style: CodegenStyle,
+            #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+            pub typescript: bool,
+            #[serde(default)]
+            pub paths: HashMap<String, String>,
+            #[serde(default)]
+            pub extra: HashMap<String, u64>,
         },
 
         #[serde(default)]
@@ -35,38 +48,37 @@ nest! {
             pub discount: Option<u8>,
             pub price: i64,
             pub regional_pricing: Option<bool>,
+            #[serde(default)]
+            pub icon: Option<String>,
+            #[serde(default)]
+            pub path: Option<String>,
         }>,
 
         #[serde(default)]
         pub products: HashMap<String, Product>,
 
         #[serde(default)]
-        pub subscriptions: HashMap<String, pub struct SubscriptionEntry {
-            pub id: Option<String>,
-            pub name: String,
-            #[serde(default)]
-            pub description: Option<String>,
-            pub active: bool,
-            #[serde(default)]
-            pub price: i64,
-        }>,
-
-        #[serde(default)]
         pub badges: HashMap<String, Product>,
     }
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CodegenStyle {
+    #[default]
+    Flat,
+    Nested,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ProductType {
     GamePass,
     DevProduct,
-    Subscription,
     Badge,
 }
 pub enum MultiProduct {
     GamePass(Product),
     DevProduct(Product),
-    Subscription(SubscriptionEntry),
     Badge(Product),
 }
 
@@ -89,7 +101,17 @@ macro_rules! check_diff {
 impl VCSProducts {
     pub async fn get_products() -> Result<Self> {
         let file_data = fs::read("rbxmonet.toml").await?;
-        let products: VCSProducts = toml::from_slice(&file_data)?;
+        let text = std::str::from_utf8(&file_data)?;
+        let doc: toml_edit::DocumentMut = text.parse()?;
+        if doc
+            .get("metadata")
+            .and_then(|m| m.as_table())
+            .and_then(|t| t.get("luau-file"))
+            .is_some()
+        {
+            return Err("[metadata] luau-file is no longer supported \u{2014} move to [codegen] output (rbxmonet >= 0.1.21)".into());
+        }
+        let products: VCSProducts = toml::from_str(text)?;
         Ok(products)
     }
 
@@ -106,7 +128,6 @@ impl VCSProducts {
         let mut metadata = get_toml_value!(toml_products, "metadata");
         let mut gamepasses = get_toml_value!(toml_products, "gamepasses");
         let mut products = get_toml_value!(toml_products, "products");
-        let mut subscriptions = get_toml_value!(toml_products, "subscriptions");
         let mut badges = get_toml_value!(toml_products, "badges");
 
         if let Some(discount_prefix) = &self.metadata.discount_prefix {
@@ -116,12 +137,7 @@ impl VCSProducts {
         }
 
         metadata["universe-id"] = toml_edit::value(self.metadata.universe_id as i64);
-
-        if let Some(luau_file) = &self.metadata.luau_file {
-            metadata["luau-file"] = toml_edit::value(luau_file);
-        } else {
-            metadata.remove("luau-file");
-        }
+        metadata.remove("luau-file");
 
         let filters = self
             .metadata
@@ -134,23 +150,24 @@ impl VCSProducts {
 
         metadata["name-filters"] = toml_edit::value(Array::from_iter(filters.iter()));
 
+        gamepasses.retain(|k, _| self.gamepasses.contains_key(k));
+        products.retain(|k, _| self.products.contains_key(k));
+        badges.retain(|k, _| self.badges.contains_key(k));
+
         for gamepass in &self.gamepasses {
             gamepasses[&gamepass.0] = gamepass.1.into();
         }
         for product in &self.products {
             products[&product.0] = product.1.into();
         }
-        for subscription in &self.subscriptions {
-            subscriptions[&subscription.0] = subscription.1.into();
-        }
         for badge in &self.badges {
             badges[&badge.0] = badge.1.into();
         }
 
+        toml_products.remove("subscriptions");
         toml_products["metadata"] = toml_edit::Item::Table(metadata);
         toml_products["gamepasses"] = toml_edit::Item::Table(gamepasses);
         toml_products["products"] = toml_edit::Item::Table(products);
-        toml_products["subscriptions"] = toml_edit::Item::Table(subscriptions);
         toml_products["badges"] = toml_edit::Item::Table(badges);
 
         fs::write("rbxmonet.toml", toml_products.to_string()).await?;
@@ -158,13 +175,13 @@ impl VCSProducts {
     }
 
     pub async fn serialize_luau(&self) -> Result<()> {
-        let products_lua_file = match self.metadata.luau_file.clone() {
+        let products_lua_file = match self.codegen.output.clone() {
             Some(file) => file,
-            None => return Ok(()),
+            None => {
+                log::info!("codegen.output not set \u{2014} skipping luau generation");
+                return Ok(());
+            }
         };
-
-        let mut file = fs::File::create(products_lua_file).await?;
-        let mut contents = String::new();
 
         let discount_prefix = self
             .metadata
@@ -184,66 +201,378 @@ impl VCSProducts {
             }
         };
 
-        let serialize = |contents: &mut String, products: &HashMap<String, Product>| {
-            let mut entries: Vec<(&String, &Product)> = products.iter().collect();
-            entries.sort_by(|a, b| a.1.id.cmp(&b.1.id));
-
-            for (index, (slug, product)) in entries.iter().enumerate() {
-                *contents += &format!(
-                    "\t\t[{:?}] = {{ id = {:?}, price = {}, name = {:?}, description = {:?} }}",
-                    slug,
-                    product.id.unwrap_or(0),
-                    product.get_price(),
-                    format_display_name(product),
-                    product.description.clone().unwrap_or_default(),
-                );
-
-                if index != products.len() - 1 {
-                    *contents += ",\n";
-                } else {
-                    *contents += "\n";
-                }
-            }
+        let resolve_section = |key: &str, default: &str| -> String {
+            self.codegen
+                .paths
+                .get(key)
+                .cloned()
+                .unwrap_or_else(|| default.to_string())
         };
 
-        let serialize_subs = |contents: &mut String, subs: &HashMap<String, SubscriptionEntry>| {
-            let mut entries: Vec<(&String, &SubscriptionEntry)> = subs.iter().collect();
-            entries.sort_by(|a, b| a.0.cmp(b.0));
+        let mut tree: CodegenTree = BTreeMap::new();
 
-            for (index, (slug, sub)) in entries.iter().enumerate() {
-                *contents += &format!(
-                    "\t\t[{:?}] = {{ id = {:?}, price = {}, name = {:?}, description = {:?} }}",
-                    slug,
-                    sub.id.clone().unwrap_or_default(),
-                    sub.price,
-                    sub.name,
-                    sub.description.clone().unwrap_or_default(),
-                );
-
-                if index != subs.len() - 1 {
-                    *contents += ",\n";
-                } else {
-                    *contents += "\n";
-                }
-            }
+        let insert_product = |tree: &mut CodegenTree,
+                               section_path: &str,
+                               slug: &str,
+                               p: &Product,
+                               section: SectionKind| {
+            let path = p.path.as_deref().unwrap_or(section_path);
+            let leaf = LeafKind::Rich {
+                section,
+                id: p.id.unwrap_or(0),
+                price: p.get_price() as i64,
+                name: format_display_name(p),
+                description: p.description.clone().unwrap_or_default(),
+            };
+            insert_into_tree(tree, &split_path(path), slug, leaf);
         };
 
+        let gp_path = resolve_section("passes", "Gamepasses");
+        let prod_path = resolve_section("products", "Products");
+        let badge_path = resolve_section("badges", "Badges");
+
+        for (slug, p) in &self.gamepasses {
+            insert_product(&mut tree, &gp_path, slug, p, SectionKind::Gamepass);
+        }
+        for (slug, p) in &self.products {
+            insert_product(&mut tree, &prod_path, slug, p, SectionKind::Product);
+        }
+        for (slug, p) in &self.badges {
+            insert_product(&mut tree, &badge_path, slug, p, SectionKind::Badge);
+        }
+
+        for (full_key, id) in &self.codegen.extra {
+            let (path, leaf_key) = match full_key.rfind('.') {
+                Some(i) => (&full_key[..i], &full_key[i + 1..]),
+                None => ("", full_key.as_str()),
+            };
+            let segments = if path.is_empty() {
+                Vec::new()
+            } else {
+                split_path(path)
+            };
+            insert_into_tree(&mut tree, &segments, leaf_key, LeafKind::IdOnly(*id));
+        }
+
+        let mut contents = String::new();
         contents += "-- This file is automatically generated by rbxmonet. Do not edit this file directly.\n";
+        contents += "export type Gamepass = { id: number, price: number, name: string, description: string }\n";
         contents += "export type Product = { id: number, price: number, name: string, description: string }\n";
-        contents += "export type Subscription = { id: string, price: number, name: string, description: string }\n\n";
-        contents += "return {\n\tGamepasses = {\n";
-        serialize(&mut contents, &self.gamepasses);
-        contents += "\t},\n\n\tProducts = {\n";
-        serialize(&mut contents, &self.products);
-        contents += "\t},\n\n\tSubscriptions = {\n";
-        serialize_subs(&mut contents, &self.subscriptions);
-        contents += "\t},\n\n\tBadges = {\n";
-        serialize(&mut contents, &self.badges);
-        contents += "\t}\n}";
+        contents += "export type Badge = { id: number, price: number, name: string, description: string }\n";
+        contents += "export type IdLeaf = { id: number }\n\n";
 
+        match self.codegen.style {
+            CodegenStyle::Flat => render_flat(&mut contents, &tree),
+            CodegenStyle::Nested => render_nested(&mut contents, &tree),
+        }
+
+        let mut file = fs::File::create(&products_lua_file).await?;
         file.write_all(contents.as_bytes()).await?;
 
+        if self.codegen.typescript {
+            let dts_path = derive_dts_path(&products_lua_file);
+            let var_name = derive_module_name(&products_lua_file);
+            let mut dts = String::new();
+            dts += "// This file is automatically generated by rbxmonet. Do not edit this file directly.\n";
+            dts += "export interface Gamepass { id: number; price: number; name: string; description: string }\n";
+            dts += "export interface Product { id: number; price: number; name: string; description: string }\n";
+            dts += "export interface Badge { id: number; price: number; name: string; description: string }\n";
+            dts += "export interface IdLeaf { id: number }\n\n";
+            match self.codegen.style {
+                CodegenStyle::Flat => render_flat_dts(&mut dts, &tree, &var_name),
+                CodegenStyle::Nested => render_nested_dts(&mut dts, &tree, &var_name),
+            }
+            let mut dts_file = fs::File::create(&dts_path).await?;
+            dts_file.write_all(dts.as_bytes()).await?;
+        }
+
         Ok(())
+    }
+}
+
+fn derive_dts_path(luau_path: &str) -> String {
+    if let Some(stripped) = luau_path.strip_suffix(".luau") {
+        format!("{}.d.ts", stripped)
+    } else if let Some(stripped) = luau_path.strip_suffix(".lua") {
+        format!("{}.d.ts", stripped)
+    } else {
+        format!("{}.d.ts", luau_path)
+    }
+}
+
+fn derive_module_name(luau_path: &str) -> String {
+    let stem = std::path::Path::new(luau_path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("monets");
+    if is_simple_lua_ident(stem) {
+        stem.to_string()
+    } else {
+        let sanitized: String = stem
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' })
+            .collect();
+        if sanitized.is_empty() || !sanitized.chars().next().unwrap().is_ascii_alphabetic() {
+            format!("_{}", sanitized)
+        } else {
+            sanitized
+        }
+    }
+}
+
+fn render_nested(out: &mut String, tree: &CodegenTree) {
+    out.push_str("return {\n");
+    let mut entries: Vec<(&String, &CodegenNode)> = tree.iter().collect();
+    entries.sort_by(|a, b| a.0.cmp(b.0));
+    let len = entries.len();
+    for (i, (key, node)) in entries.iter().enumerate() {
+        out.push_str(&format!("\t{} = ", format_lua_key(key)));
+        render_node(out, node, 1);
+        if i + 1 != len {
+            out.push_str(",\n\n");
+        } else {
+            out.push_str("\n");
+        }
+    }
+    out.push_str("}");
+}
+
+fn render_flat(out: &mut String, tree: &CodegenTree) {
+    let mut leaves: Vec<(String, &LeafKind)> = Vec::new();
+    collect_flat_leaves(tree, &mut Vec::new(), &mut leaves);
+    leaves.sort_by(|a, b| a.0.cmp(&b.0));
+
+    out.push_str("return {\n");
+    let len = leaves.len();
+    for (i, (path, leaf)) in leaves.iter().enumerate() {
+        out.push_str(&format!("\t[{:?}] = ", path));
+        render_leaf(out, leaf);
+        if i + 1 != len {
+            out.push_str(",\n");
+        } else {
+            out.push_str("\n");
+        }
+    }
+    out.push_str("}");
+}
+
+fn collect_flat_leaves<'a>(
+    tree: &'a CodegenTree,
+    path: &mut Vec<String>,
+    out: &mut Vec<(String, &'a LeafKind)>,
+) {
+    for (key, node) in tree {
+        path.push(key.clone());
+        match node {
+            CodegenNode::Leaf(kind) => out.push((path.join("."), kind)),
+            CodegenNode::Branch(children) => collect_flat_leaves(children, path, out),
+        }
+        path.pop();
+    }
+}
+
+fn render_leaf(out: &mut String, leaf: &LeafKind) {
+    match leaf {
+        LeafKind::Rich {
+            id,
+            price,
+            name,
+            description,
+            ..
+        } => {
+            out.push_str(&format!(
+                "{{ id = {}, price = {}, name = {:?}, description = {:?} }}",
+                id, price, name, description
+            ));
+        }
+        LeafKind::IdOnly(id) => {
+            out.push_str(&format!("{{ id = {} }}", id));
+        }
+    }
+}
+
+fn leaf_ts_type(leaf: &LeafKind) -> &'static str {
+    match leaf {
+        LeafKind::IdOnly(_) => "IdLeaf",
+        LeafKind::Rich { section, .. } => section.ts_name(),
+    }
+}
+
+fn render_flat_dts(out: &mut String, tree: &CodegenTree, var_name: &str) {
+    let mut leaves: Vec<(String, &LeafKind)> = Vec::new();
+    collect_flat_leaves(tree, &mut Vec::new(), &mut leaves);
+    leaves.sort_by(|a, b| a.0.cmp(&b.0));
+
+    out.push_str(&format!("declare const {}: {{\n", var_name));
+    for (path, leaf) in &leaves {
+        out.push_str(&format!("\t{:?}: {};\n", path, leaf_ts_type(leaf)));
+    }
+    out.push_str("};\n");
+    out.push_str(&format!("export default {};\n", var_name));
+}
+
+fn render_nested_dts(out: &mut String, tree: &CodegenTree, var_name: &str) {
+    out.push_str(&format!("declare const {}: ", var_name));
+    render_ts_branch(out, tree, 0);
+    out.push_str(";\n");
+    out.push_str(&format!("export default {};\n", var_name));
+}
+
+fn render_ts_branch(out: &mut String, tree: &CodegenTree, depth: usize) {
+    let indent = "\t".repeat(depth);
+    let inner = "\t".repeat(depth + 1);
+    out.push_str("{\n");
+    let mut entries: Vec<(&String, &CodegenNode)> = tree.iter().collect();
+    entries.sort_by(|a, b| a.0.cmp(b.0));
+    for (key, node) in &entries {
+        let key_repr = if is_simple_lua_ident(key) {
+            key.to_string()
+        } else {
+            format!("{:?}", key)
+        };
+        match node {
+            CodegenNode::Leaf(kind) => {
+                out.push_str(&format!("{}{}: {};\n", inner, key_repr, leaf_ts_type(kind)));
+            }
+            CodegenNode::Branch(children) => {
+                out.push_str(&format!("{}{}: ", inner, key_repr));
+                render_ts_branch(out, children, depth + 1);
+                out.push_str(";\n");
+            }
+        }
+    }
+    out.push_str(&format!("{}}}", indent));
+}
+
+// ---------------------------------------------------------------------------
+// Codegen tree: borrowed structure from dev-bap/rbxsync, adapted to emit
+// rich `{ id, price, name, description }` leaves for rbxmonet entries while
+// also supporting `{ id = N }` leaves for `[codegen.extra]` injections.
+// ---------------------------------------------------------------------------
+
+type CodegenTree = BTreeMap<String, CodegenNode>;
+
+enum CodegenNode {
+    Leaf(LeafKind),
+    Branch(BTreeMap<String, CodegenNode>),
+}
+
+#[derive(Clone, Copy)]
+enum SectionKind {
+    Gamepass,
+    Product,
+    Badge,
+}
+
+impl SectionKind {
+    fn ts_name(self) -> &'static str {
+        match self {
+            SectionKind::Gamepass => "Gamepass",
+            SectionKind::Product => "Product",
+            SectionKind::Badge => "Badge",
+        }
+    }
+}
+
+#[derive(Clone)]
+enum LeafKind {
+    Rich {
+        section: SectionKind,
+        id: u64,
+        price: i64,
+        name: String,
+        description: String,
+    },
+    IdOnly(u64),
+}
+
+fn split_path(path: &str) -> Vec<&str> {
+    path.split('.').filter(|s| !s.is_empty()).collect()
+}
+
+fn insert_into_tree(tree: &mut CodegenTree, segments: &[&str], key: &str, leaf: LeafKind) {
+    if segments.is_empty() {
+        if tree.contains_key(key) {
+            log::warn!("codegen: overwriting key '{}'", key);
+        }
+        tree.insert(key.to_string(), CodegenNode::Leaf(leaf));
+        return;
+    }
+
+    let head = segments[0].to_string();
+    let entry = tree
+        .entry(head.clone())
+        .or_insert_with(|| CodegenNode::Branch(BTreeMap::new()));
+    match entry {
+        CodegenNode::Branch(children) => {
+            insert_into_tree(children, &segments[1..], key, leaf);
+        }
+        CodegenNode::Leaf(_) => {
+            log::warn!(
+                "codegen: path segment '{}' is both a leaf and a branch; promoting to branch",
+                head
+            );
+            let mut children = BTreeMap::new();
+            insert_into_tree(&mut children, &segments[1..], key, leaf);
+            *entry = CodegenNode::Branch(children);
+        }
+    }
+}
+
+fn is_simple_lua_ident(s: &str) -> bool {
+    if s.is_empty() {
+        return false;
+    }
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+fn format_lua_key(key: &str) -> String {
+    if is_simple_lua_ident(key) {
+        key.to_string()
+    } else {
+        format!("[{:?}]", key)
+    }
+}
+
+fn render_node(out: &mut String, node: &CodegenNode, depth: usize) {
+    let indent = "\t".repeat(depth);
+    match node {
+        CodegenNode::Leaf(LeafKind::Rich {
+            id,
+            price,
+            name,
+            description,
+            ..
+        }) => {
+            out.push_str(&format!(
+                "{{ id = {}, price = {}, name = {:?}, description = {:?} }}",
+                id, price, name, description
+            ));
+        }
+        CodegenNode::Leaf(LeafKind::IdOnly(id)) => {
+            out.push_str(&format!("{{ id = {} }}", id));
+        }
+        CodegenNode::Branch(children) => {
+            out.push_str("{\n");
+            let mut entries: Vec<(&String, &CodegenNode)> = children.iter().collect();
+            entries.sort_by(|a, b| a.0.cmp(b.0));
+            let len = entries.len();
+            for (i, (key, child)) in entries.iter().enumerate() {
+                out.push_str(&format!("{}\t{} = ", indent, format_lua_key(key)));
+                render_node(out, child, depth + 1);
+                if i + 1 != len {
+                    out.push_str(",\n");
+                } else {
+                    out.push_str("\n");
+                }
+            }
+            out.push_str(&format!("{}}}", indent));
+        }
     }
 }
 
@@ -362,27 +691,15 @@ impl From<&Product> for toml_edit::Item {
             table["regional-pricing"] = toml_edit::value(regional_pricing);
         }
 
+        if let Some(icon) = &prod.icon {
+            table["icon"] = toml_edit::value(icon.clone());
+        }
+
+        if let Some(path) = &prod.path {
+            table["path"] = toml_edit::value(path.clone());
+        }
+
         toml_edit::Item::Table(table)
     }
 }
 
-impl From<&SubscriptionEntry> for toml_edit::Item {
-    fn from(sub: &SubscriptionEntry) -> Self {
-        let mut table = toml_edit::Table::new();
-
-        if let Some(id) = &sub.id {
-            table["id"] = toml_edit::value(id.clone());
-        }
-
-        table["name"] = toml_edit::value(&sub.name);
-
-        if let Some(desc) = &sub.description {
-            table["description"] = toml_edit::value(desc);
-        }
-
-        table["active"] = toml_edit::value(sub.active);
-        table["price"] = toml_edit::value(sub.price);
-
-        toml_edit::Item::Table(table)
-    }
-}
