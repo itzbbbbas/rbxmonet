@@ -23,7 +23,7 @@ impl Downloader {
 
         info!(
             "fetched {} local products, {} remote products",
-            local_products_data.gamepasses.len()
+            local_products_data.passes.len()
                 + local_products_data.products.len()
                 + local_products_data.badges.len(),
             remote_snapshot.products.len()
@@ -51,7 +51,7 @@ impl Downloader {
 
         remote_product_data.iter().for_each(|multi_product| {
             let (product, product_type): (Product, ProductType) = match multi_product {
-                MultiProduct::GamePass(prod) => (prod.clone(), ProductType::GamePass),
+                MultiProduct::Pass(prod) => (prod.clone(), ProductType::Pass),
                 MultiProduct::DevProduct(prod) => (prod.clone(), ProductType::DevProduct),
                 MultiProduct::Badge(prod) => (prod.clone(), ProductType::Badge),
             };
@@ -59,7 +59,7 @@ impl Downloader {
             let name = format_name(canonical_name(product.name.clone(), &filters));
 
             let existing = match product_type {
-                ProductType::GamePass => local_products_data.gamepasses.iter().find(|(_, x)| {
+                ProductType::Pass => local_products_data.passes.iter().find(|(_, x)| {
                     x.id.map(|id| id as i64).unwrap_or(-1)
                         == product.id.map(|id| id as i64).unwrap_or(-1)
                 }),
@@ -141,7 +141,7 @@ impl Downloader {
             };
 
             match product_type {
-                ProductType::GamePass => local_products_data.gamepasses.insert(key, product),
+                ProductType::Pass => local_products_data.passes.insert(key, product),
                 ProductType::DevProduct => local_products_data.products.insert(key, product),
                 ProductType::Badge => local_products_data.badges.insert(key, product),
             };
@@ -160,15 +160,15 @@ impl Downloader {
 }
 
 fn prune_stale(local: &mut VCSProducts, snapshot: &RemoteSnapshot) {
-    let mut remote_gamepass_ids: HashSet<u64> = HashSet::new();
+    let mut remote_pass_ids: HashSet<u64> = HashSet::new();
     let mut remote_devproduct_ids: HashSet<u64> = HashSet::new();
     let mut remote_badge_ids: HashSet<u64> = HashSet::new();
 
     for mp in &snapshot.products {
         match mp {
-            MultiProduct::GamePass(p) => {
+            MultiProduct::Pass(p) => {
                 if let Some(id) = p.id {
-                    remote_gamepass_ids.insert(id);
+                    remote_pass_ids.insert(id);
                 }
             }
             MultiProduct::DevProduct(p) => {
@@ -184,8 +184,8 @@ fn prune_stale(local: &mut VCSProducts, snapshot: &RemoteSnapshot) {
         }
     }
 
-    if snapshot.gamepasses_fetched {
-        prune_section_u64(&mut local.gamepasses, &remote_gamepass_ids, "gamepass");
+    if snapshot.passes_fetched {
+        prune_section_u64(&mut local.passes, &remote_pass_ids, "pass");
     }
     if snapshot.dev_products_fetched {
         prune_section_u64(&mut local.products, &remote_devproduct_ids, "dev product");

@@ -43,23 +43,23 @@ use crate::sync::products::{MultiProduct, Product};
 /// to avoid nuking a local section when its remote fetch was skipped.
 pub struct RemoteSnapshot {
     pub products: Vec<MultiProduct>,
-    pub gamepasses_fetched: bool,
+    pub passes_fetched: bool,
     pub dev_products_fetched: bool,
     pub badges_fetched: bool,
 }
 
 pub async fn fetch_all_products(universe_id: u64) -> Result<RemoteSnapshot> {
-    let gamepasses = fetch_all_gamepasses(universe_id).await?;
+    let passes = fetch_all_passes(universe_id).await?;
     let products = fetch_all_dev_products(universe_id).await?;
     let badges = fetch_all_badges(universe_id).await?;
 
     let mut all_products: Vec<MultiProduct> = Vec::new();
 
-    if let Some(items) = &gamepasses {
+    if let Some(items) = &passes {
         all_products.extend(
             items
                 .iter()
-                .map(|x| MultiProduct::GamePass(Product::from(x))),
+                .map(|x| MultiProduct::Pass(Product::from(x))),
         );
     }
     if let Some(items) = &products {
@@ -75,7 +75,7 @@ pub async fn fetch_all_products(universe_id: u64) -> Result<RemoteSnapshot> {
 
     Ok(RemoteSnapshot {
         products: all_products,
-        gamepasses_fetched: gamepasses.is_some(),
+        passes_fetched: passes.is_some(),
         dev_products_fetched: products.is_some(),
         badges_fetched: badges.is_some(),
     })
@@ -234,8 +234,8 @@ pub async fn fetch_all_dev_products(universe_id: u64) -> Result<Option<Vec<DevPr
     Ok(Some(products))
 }
 
-pub async fn fetch_all_gamepasses(universe_id: u64) -> Result<Option<Vec<GamePass>>> {
-    let mut gamepasses = vec![];
+pub async fn fetch_all_passes(universe_id: u64) -> Result<Option<Vec<GamePass>>> {
+    let mut passes = vec![];
 
     let page_size = 100;
     let mut page_cursor: String = String::default();
@@ -253,10 +253,10 @@ pub async fn fetch_all_gamepasses(universe_id: u64) -> Result<Option<Vec<GamePas
             req = req.query(&[("pageToken", page_cursor.clone())]);
         }
 
-        let resp = check_status(req.send().await?, "list gamepasses").await?;
-        let page: GamePassPage = json_or_explain(resp, "list gamepasses").await?;
+        let resp = check_status(req.send().await?, "list passes").await?;
+        let page: GamePassPage = json_or_explain(resp, "list passes").await?;
 
-        gamepasses.extend(page.game_passes);
+        passes.extend(page.game_passes);
 
         match page.next_page_token {
             Some(cursor) => {
@@ -266,8 +266,8 @@ pub async fn fetch_all_gamepasses(universe_id: u64) -> Result<Option<Vec<GamePas
         }
     }
 
-    info!("fetched {} gamepasses", gamepasses.len());
-    Ok(Some(gamepasses))
+    info!("fetched {} passes", passes.len());
+    Ok(Some(passes))
 }
 
 async fn attach_icon_part(
@@ -306,15 +306,15 @@ pub async fn update_dev_product(
     Ok(())
 }
 
-pub async fn update_gamepass(
+pub async fn update_pass(
     universe_id: u64,
-    game_pass_id: u64,
+    pass_id: u64,
     update: &ProductUpdateRequest,
     icon_path: Option<&str>,
 ) -> Result<()> {
     let url = format!(
         "https://apis.roblox.com/game-passes/v1/universes/{}/game-passes/{}",
-        universe_id, game_pass_id
+        universe_id, pass_id
     );
     let form: reqwest::multipart::Form = update.into();
     let form = attach_icon_part(form, "file", icon_path).await?;
@@ -324,7 +324,7 @@ pub async fn update_gamepass(
         .send()
         .await?;
 
-    check_status(resp, "update gamepass").await?;
+    check_status(resp, "update pass").await?;
 
     Ok(())
 }
@@ -350,16 +350,16 @@ pub async fn create_dev_product(
     Ok(resp.json().await?)
 }
 
-pub async fn create_gamepass(
+pub async fn create_pass(
     universe_id: u64,
-    gamepass: &ProductUpdateRequest,
+    pass: &ProductUpdateRequest,
     icon_path: Option<&str>,
 ) -> Result<GamePass> {
     let url = format!(
         "https://apis.roblox.com/game-passes/v1/universes/{}/game-passes",
         universe_id
     );
-    let form: reqwest::multipart::Form = gamepass.into();
+    let form: reqwest::multipart::Form = pass.into();
     let form = attach_icon_part(form, "imageFile", icon_path).await?;
     let resp = open_cloud_client()
         .post(&url)
@@ -367,7 +367,7 @@ pub async fn create_gamepass(
         .send()
         .await?;
 
-    let resp = check_status(resp, "create gamepass").await?;
+    let resp = check_status(resp, "create pass").await?;
     Ok(resp.json().await?)
 }
 

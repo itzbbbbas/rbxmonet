@@ -3,8 +3,8 @@ use log::info;
 use crate::Result;
 use crate::api::model::{BadgeUpdateRequest, ProductUpdateRequest};
 use crate::api::products::{
-    create_badge, create_dev_product, create_gamepass, fetch_all_products, fetch_badge_metadata,
-    fetch_free_badges_quota, update_badge, update_dev_product, update_gamepass,
+    create_badge, create_dev_product, create_pass, fetch_all_products, fetch_badge_metadata,
+    fetch_free_badges_quota, update_badge, update_dev_product, update_pass,
 };
 
 const DEFAULT_ICON: &str = "assets/Image/missing_texture.png";
@@ -31,9 +31,9 @@ fn apply_discount_prefix(product: &mut Product, prefix: Option<String>) {
 
 impl Uploader {
     fn has_empty_products(&self) -> bool {
-        let has_empty_gamepasses = self
+        let has_empty_passes = self
             .local_products
-            .gamepasses
+            .passes
             .iter()
             .any(|(_, gp)| gp.id.is_none());
         let has_empty_devproducts = self
@@ -42,7 +42,7 @@ impl Uploader {
             .iter()
             .any(|(_, dp)| dp.id.is_none());
 
-        has_empty_gamepasses || has_empty_devproducts
+        has_empty_passes || has_empty_devproducts
     }
 
     async fn upload_badge_creates(&mut self) -> Result<()> {
@@ -153,8 +153,8 @@ impl Uploader {
                 let update_request = ProductUpdateRequest::from(&product);
                 let icon_path = product.icon.as_deref();
                 let product_id = match product_type {
-                    ProductType::GamePass => {
-                        create_gamepass(universe_id, &update_request, icon_path)
+                    ProductType::Pass => {
+                        create_pass(universe_id, &update_request, icon_path)
                             .await?
                             .game_pass_id
                     }
@@ -178,42 +178,42 @@ impl Uploader {
                 Ok(product_id)
             };
 
-        let mut gamepass_futures = vec![];
+        let mut pass_futures = vec![];
         let mut devproduct_futures = vec![];
 
         info!(
-            "uploading {} products, and {} gamepasses in universe {}",
+            "uploading {} products, and {} passes in universe {}",
             self.local_products.products.len(),
-            self.local_products.gamepasses.len(),
+            self.local_products.passes.len(),
             universe_id
         );
 
-        for (name, gamepass) in &self.local_products.gamepasses {
-            if gamepass.id.is_none() {
+        for (name, pass) in &self.local_products.passes {
+            if pass.id.is_none() {
                 let universe_id = universe_id.clone();
                 let name = name.clone();
-                let mut gamepass = gamepass.clone();
+                let mut pass = pass.clone();
 
                 apply_discount_prefix(
-                    &mut gamepass,
+                    &mut pass,
                     self.local_products.metadata.discount_prefix.clone(),
                 );
 
                 let future = (async move {
                     let product_id =
-                        upload_product(universe_id, gamepass, ProductType::GamePass).await;
+                        upload_product(universe_id, pass, ProductType::Pass).await;
 
                     match product_id {
                         Ok(id) => Some((name, id)),
                         Err(e) => {
-                            log::error!("failed to upload gamepass '{}': {}", name, e);
+                            log::error!("failed to upload pass '{}': {}", name, e);
                             None
                         }
                     }
                 })
                 .await;
 
-                gamepass_futures.push(future);
+                pass_futures.push(future);
             }
         }
 
@@ -247,10 +247,10 @@ impl Uploader {
             }
         }
 
-        gamepass_futures.into_iter().for_each(|res| {
+        pass_futures.into_iter().for_each(|res| {
             if let Some((name, id)) = res {
                 self.local_products
-                    .gamepasses
+                    .passes
                     .get_mut(name.as_str())
                     .unwrap()
                     .id = Some(id as u64);
@@ -280,7 +280,7 @@ impl Uploader {
         let products = &self.remote_products;
         let mut all_local_products = vec![];
 
-        all_local_products.extend(self.local_products.gamepasses.values().cloned());
+        all_local_products.extend(self.local_products.passes.values().cloned());
         all_local_products.extend(self.local_products.products.values().cloned());
         all_local_products.extend(self.local_products.badges.values().cloned());
 
@@ -295,11 +295,11 @@ impl Uploader {
 
                     let (product_type, remote_product) =
                         match products.iter().find(|multi_product| match multi_product {
-                            MultiProduct::GamePass(pass) => pass.id.unwrap() == id,
+                            MultiProduct::Pass(pass) => pass.id.unwrap() == id,
                             MultiProduct::DevProduct(prod) => prod.id.unwrap() == id,
                             MultiProduct::Badge(b) => b.id.unwrap() == id,
                         }) {
-                            Some(MultiProduct::GamePass(pass)) => (ProductType::GamePass, pass),
+                            Some(MultiProduct::Pass(pass)) => (ProductType::Pass, pass),
                             Some(MultiProduct::DevProduct(prod)) => (ProductType::DevProduct, prod),
                             Some(MultiProduct::Badge(badge)) => (ProductType::Badge, badge),
                             None => return None,
@@ -358,9 +358,9 @@ impl Uploader {
 
         for (product_type, id) in diffs {
             let mut local_product = match product_type {
-                ProductType::GamePass => self
+                ProductType::Pass => self
                     .local_products
-                    .gamepasses
+                    .passes
                     .values()
                     .find(|gp| gp.id == Some(id)),
                 ProductType::DevProduct => self
@@ -388,8 +388,8 @@ impl Uploader {
             let icon_path = local_product.icon.as_deref();
 
             match product_type {
-                ProductType::GamePass => {
-                    update_gamepass(universe_id, id, &update_request, icon_path).await?;
+                ProductType::Pass => {
+                    update_pass(universe_id, id, &update_request, icon_path).await?;
                 }
                 ProductType::DevProduct => {
                     update_dev_product(universe_id, id, &update_request, icon_path).await?;
@@ -403,7 +403,7 @@ impl Uploader {
             info!("synced {:?} '{}' (id: {})", product_type, name, id);
         }
 
-        info!("finished syncing all gamepasses/products");
+        info!("finished syncing all passes/products");
 
         Ok(())
     }
@@ -417,7 +417,7 @@ impl Uploader {
 
         info!(
             "fetched {} local products, {} remote products",
-            local_products_data.gamepasses.len()
+            local_products_data.passes.len()
                 + local_products_data.products.len()
                 + local_products_data.badges.len(),
             snapshot.products.len()

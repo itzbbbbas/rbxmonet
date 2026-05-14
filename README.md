@@ -35,7 +35,7 @@ Via [Rokit](https://github.com/rojo-rbx/rokit) (recommended for Roblox projects)
 ```toml
 # rokit.toml
 [tools]
-rbxmonet = "itzbbbbas/rbxmonet@0.1.23"
+rbxmonet = "itzbbbbas/rbxmonet@0.1.24"
 ```
 
 ```bash
@@ -131,8 +131,9 @@ output     = "src/ReplicatedFirst/monets.luau"   # required; omit to skip Luau g
 # style    = "flat"                              # "flat" (default) or "nested"
 # typescript = false                             # also emit <output>.d.ts sidecar
 
-# ------- Game passes -------
-[gamepasses.vip]                           # slug becomes the Luau key
+# MARK: Passes
+
+[passes.vip]                               # slug becomes the Luau key
 id              = 1834607988               # written by `download`; you may leave it out for new entries
 name            = "V.I.P"                  # internal name (display name = discount-prefix + name)
 description     = "Daily perks"
@@ -142,7 +143,8 @@ discount        = 10                       # 0–100; 0 disables the discount pr
 regional-pricing = true
 icon            = "assets/icons/vip.png"   # optional; uploaded on create + update
 
-# ------- Developer products -------
+# MARK: Products
+
 [products.starter-pack]
 id              = 3554032826
 name            = "Starter Pack"
@@ -153,7 +155,8 @@ discount        = 0
 regional-pricing = true
 icon            = "assets/icons/starter.png"
 
-# ------- Badges -------
+# MARK: Badges
+
 [badges.first-win]
 id              = 2147483648               # leave unset to have `sync` create the badge
 name            = "First Win"
@@ -162,20 +165,22 @@ active          = true                     # maps to badge `enabled`
 icon            = "assets/icons/first-win.png"
 ```
 
+> Renamed from `[gamepasses.*]` → `[passes.*]` in v0.1.24. Loading an older toml errors with a migration hint.
+
 ### Slug keys
 
 The header key (`vip` / `starter-pack` / `first-win`) is what shows up in the generated Luau table. Game code looks items up by this slug, not by display name:
 
 ```luau
-monets.Gamepasses.vip.id   -- 1834607988
+monets.Passes.vip.id   -- 1834607988
 monets.Products["starter-pack"].price   -- 199
 ```
 
 Slug syntax follows TOML bare-key rules: `[a-zA-Z0-9_-]`. Use quotes for anything outside that set:
 
 ```toml
-[gamepasses.vip]              # bare — preferred
-[gamepasses."v.i.p"]          # quoted — required when the slug contains "." or other reserved chars
+[passes.vip]              # bare — preferred
+[passes."v.i.p"]          # quoted — required when the slug contains "." or other reserved chars
 ```
 
 ### Discount prefix
@@ -200,20 +205,20 @@ output     = "src/ReplicatedFirst/monets.luau"
 
 `style = "flat"` (default) emits each leaf at the root keyed by its dotted path. `style = "nested"` builds a tree of tables.
 
-The three built-in sections default to `Gamepasses`, `Products`, `Badges`. Use `[codegen.paths]` to rename or re-nest them, `[codegen.extra]` to inject id leaves for assets rbxmonet doesn't track, and the per-item `path = "..."` field to relocate individual entries.
+The three built-in sections default to `Passes`, `Products`, `Badges`. Use `[codegen.paths]` to rename or re-nest them, `[codegen.extra]` to inject id leaves for assets rbxmonet doesn't track, and the per-item `path = "..."` field to relocate individual entries.
 
 ```toml
 [codegen]
 
 [codegen.paths]
-passes   = "Gamepasses"           # default if omitted
+passes   = "Passes"               # default if omitted
 products = "Products"
 badges   = "Items.Badges"         # dot-separated → nested table
 
 [codegen.extra]
-"Gamepasses.legacy_vip" = 1234567 # emits `{ id = 1234567 }`
+"Passes.legacy_vip" = 1234567     # emits `{ id = 1234567 }`
 
-[gamepasses.vip]
+[passes.vip]
 id   = 1834607988
 path = "Shop.Premium"             # per-item override; lands under Shop.Premium.vip
 # ...
@@ -223,9 +228,9 @@ Output under default **flat** style:
 
 ```luau
 return {
-    ["Gamepasses.legacy_vip"] = { id = 1234567 },
-    ["Gamepasses.vip"] = { id = 1834607988, price = 179, name = "V.I.P", description = "" },
     ["Items.Badges.first-win"] = { id = ..., price = 0, name = "First Win", description = "..." },
+    ["Passes.legacy_vip"] = { id = 1234567 },
+    ["Passes.vip"] = { id = 1834607988, price = 179, name = "V.I.P", description = "" },
     ["Shop.Premium.vip"] = { id = 1834607988, price = 179, name = "V.I.P", description = "" },
 }
 ```
@@ -234,14 +239,14 @@ Output under `style = "nested"`:
 
 ```luau
 return {
-    Gamepasses = {
-        legacy_vip = { id = 1234567 },
-        vip = { id = 1834607988, price = 179, name = "V.I.P", description = "" },
-    },
     Items = {
         Badges = {
             ["first-win"] = { id = ..., price = 0, name = "First Win", description = "..." },
         },
+    },
+    Passes = {
+        legacy_vip = { id = 1234567 },
+        vip = { id = 1834607988, price = 179, name = "V.I.P", description = "" },
     },
     Shop = {
         Premium = {
@@ -255,14 +260,14 @@ When `typescript = true`, rbxmonet writes a `.d.ts` sidecar next to the `.luau` 
 
 ```ts
 // monets.d.ts — auto-generated by rbxmonet. Do not edit.
-export interface Gamepass { id: number; price: number; name: string; description: string }
+export interface Pass { id: number; price: number; name: string; description: string }
 export interface Product { id: number; price: number; name: string; description: string }
 export interface Badge { id: number; price: number; name: string; description: string }
 export interface IdLeaf { id: number }
 
 declare const monets: {
-    "Gamepasses.vip": Gamepass;
-    "Gamepasses.legacy_vip": IdLeaf;
+    "Passes.vip": Pass;
+    "Passes.legacy_vip": IdLeaf;
     "Items.Badges.first-win": Badge;
 };
 export default monets;
@@ -301,13 +306,13 @@ Backslashes must be escaped (TOML strings).
 
 ```luau
 -- This file is automatically generated by rbxmonet. Do not edit this file directly.
-export type Gamepass = { id: number, price: number, name: string, description: string }
+export type Pass = { id: number, price: number, name: string, description: string }
 export type Product = { id: number, price: number, name: string, description: string }
 export type Badge = { id: number, price: number, name: string, description: string }
 export type IdLeaf = { id: number }
 
 return {
-    Gamepasses = {
+    Passes = {
         ["vip"] = { id = 1834607988, price = 199, name = "💲10% OFF💲 V.I.P", description = "Daily perks" }
     },
 
@@ -326,7 +331,7 @@ Consume from game code:
 ```luau
 local monets = require(game:GetService("ReplicatedFirst"):WaitForChild("monets"))
 
-local vipId = monets.Gamepasses.vip.id
+local vipId = monets.Passes.vip.id
 MarketplaceService:PromptGamePassPurchase(player, vipId)
 ```
 
@@ -339,13 +344,13 @@ MarketplaceService:PromptGamePassPurchase(player, vipId)
 ```bash
 rbxmonet init                            # creates a starter rbxmonet.toml
 # edit [metadata].universe-id and [codegen].output
-rbxmonet download                        # pulls every gamepass / product / badge
+rbxmonet download                        # pulls every pass / product / badge
 git add rbxmonet.toml src/ReplicatedFirst/monets.luau
 ```
 
-**Add a new gamepass**
+**Add a new pass**
 
-1. Add `[gamepasses.<slug>]` block to `rbxmonet.toml`, leave `id` unset (include `icon = "..."` if you want one on first push).
+1. Add `[passes.<slug>]` block to `rbxmonet.toml`, leave `id` unset (include `icon = "..."` if you want one on first push).
 2. `rbxmonet sync` — confirm the upload prompt.
 3. Roblox returns the new id, `rbxmonet` writes it back to the TOML.
 
@@ -396,12 +401,12 @@ Confirm prompt:
 
 ## 🧹 Auto-prune on `download`
 
-`rbxmonet download` removes any local `[gamepasses.<slug>] / [products.<slug>] / [badges.<slug>]` whose `id` is no longer present in the remote universe. Pending creates (entries without an `id`) are preserved. If a section's fetch fails (auth error, 5xx), that section is skipped — never pruned to empty by accident.
+`rbxmonet download` removes any local `[passes.<slug>] / [products.<slug>] / [badges.<slug>]` whose `id` is no longer present in the remote universe. Pending creates (entries without an `id`) are preserved. If a section's fetch fails (auth error, 5xx), that section is skipped — never pruned to empty by accident.
 
 When a prune happens, you'll see:
 
 ```
-INFO pruned 1 gamepass entries no longer in remote: legacy-vip (use `git checkout rbxmonet.toml` to undo)
+INFO pruned 1 pass entries no longer in remote: legacy-vip (use `git checkout rbxmonet.toml` to undo)
 ```
 
 Git is the safety net.
@@ -432,8 +437,9 @@ Errors are also printed to stderr unconditionally as `error: <msg>`, regardless 
 
 ## 🧰 Troubleshooting
 
-- **`error: TOML parse error ...`** — likely a `[products]` or `[gamepasses]` section without a slug. Use `[products.<slug>]`, never bare `[products]`.
-- **`error: [metadata] luau-file is no longer supported — move to [codegen] output`** — migration from pre-v0.1.21 configs. Replace `[metadata] luau-file = "X"` with `[codegen] output = "X"`. Default style flipped to `flat` in v0.1.21 — if your game code reads `monets.Gamepasses.vip.id`, also add `style = "nested"`.
+- **`error: TOML parse error ...`** — likely a `[products]` or `[passes]` section without a slug. Use `[products.<slug>]`, never bare `[products]`.
+- **`error: [gamepasses.*] is no longer supported — rename to [passes.*]`** — v0.1.24 renamed the section. Find/replace `[gamepasses.` → `[passes.` in your `rbxmonet.toml`. Also update game code: `monets.Gamepasses.vip.id` → `monets.Passes.vip.id` (or set `[codegen.paths] passes = "Gamepasses"` to keep the old Luau key).
+- **`error: [metadata] luau-file is no longer supported — move to [codegen] output`** — migration from pre-v0.1.21 configs. Replace `[metadata] luau-file = "X"` with `[codegen] output = "X"`. Default style flipped to `flat` in v0.1.21 — if your game code reads `monets.Passes.vip.id`, also add `style = "nested"`.
 - **`401 / 403` from Roblox** — API key missing required scope. Re-issue the key with the scopes listed under **Auth**.
 - **`HTTP 400 — "The badge icon is invalid."`** — only reported by the legacy `badges.roblox.com` write path; rbxmonet uses the Open Cloud `legacy-badges` surface, which accepts the same image. If you see this, you're on a pre-v0.1.17 build — upgrade.
 - **`rokit install` fails with `no release was found`** — repo is private; run `rokit authenticate github --token <PAT>` once with a token that has `repo` scope.
@@ -443,8 +449,9 @@ Errors are also printed to stderr unconditionally as `error: <msg>`, regardless 
 
 ## 🗒️ Changelog highlights
 
+- **0.1.24** — Renamed `[gamepasses.*]` → `[passes.*]` (TOML), `gamepasses` → `passes` everywhere internally, default Luau output table `Gamepasses` → `Passes`, Luau/TS export type `Gamepass` → `Pass`. Loading an older toml errors with a migration hint; set `[codegen.paths] passes = "Gamepasses"` to keep the old Luau key.
 - **0.1.23** — `--auto-confirm` / `-a` flag + `RBX_MONET_AUTO_CONFIRM` env to skip the diff TUI on `sync`.
-- **0.1.22** — Removed all `RBX_MONET_ROBLOSECURITY` cookie code; everything now flows through Open Cloud. Removed Subscriptions entirely (Roblox-side limitation). Added per-section Luau + TS export types (`Gamepass`, `Product`, `Badge`, `IdLeaf`).
+- **0.1.22** — Removed all `RBX_MONET_ROBLOSECURITY` cookie code; everything now flows through Open Cloud. Removed Subscriptions entirely (Roblox-side limitation). Added per-section Luau + TS export types (`Pass`, `Product`, `Badge`, `IdLeaf`).
 - **0.1.21** — Moved output path into `[codegen] output`. Added `style = "flat" | "nested"` (flat default). Added `typescript = true` for `.d.ts` sidecar emission.
 - **0.1.20** — Added `[codegen]`, `[codegen.paths]`, `[codegen.extra]`, and per-item `path = "..."` overrides.
 - **0.1.19** — Auto-prune deleted entries on `download` (with guards for `id`-less pending creates and skipped sections).

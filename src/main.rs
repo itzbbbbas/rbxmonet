@@ -110,7 +110,7 @@ async fn main() {
                     output: Some("products.luau".to_string()),
                     ..Default::default()
                 },
-                gamepasses: HashMap::new(),
+                passes: HashMap::new(),
                 products: HashMap::new(),
                 badges: HashMap::new(),
             };

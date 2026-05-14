@@ -93,7 +93,7 @@ impl DiffViewer {
                 };
 
                 let product_type = match pd.0 {
-                    ProductType::GamePass => "GamePass",
+                    ProductType::Pass => "Pass",
                     ProductType::DevProduct => "DevProduct",
                     ProductType::Badge => "Badge",
                 };
