@@ -57,7 +57,7 @@ async fn main() {
     init_logging();
     let _ = color_eyre::install();
 
-    if let Some(token) = std::env::var("RBX_API_KEY").ok() {
+    if let Some(token) = std::env::var("RBX_MONET_API_KEY").ok() {
         api::set_api_token(token).await;
     }
 

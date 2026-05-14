@@ -63,27 +63,44 @@ cargo +stable-x86_64-pc-windows-gnu build --release
 ## 🔐 Auth
 
 `rbxmonet sync` and `rbxmonet download` need a Roblox Open Cloud API key.
+Badge updates additionally need a `.ROBLOSECURITY` cookie (legacy
+endpoint).
 
-Set `RBX_API_KEY`:
+| Env var                   | Required for                                       |
+|---------------------------|----------------------------------------------------|
+| `RBX_MONET_API_KEY`       | Gamepasses, dev products, subscription reads, badge list |
+| `RBX_MONET_ROBLOSECURITY` | Badge update (PATCH) only                          |
+
+PowerShell:
 
 ```powershell
-$env:RBX_API_KEY = "<your Open Cloud API key>"
+$env:RBX_MONET_API_KEY = "<your Open Cloud API key>"
+$env:RBX_MONET_ROBLOSECURITY = "<.ROBLOSECURITY cookie value>"
 ```
 
-Or drop it in `.env` next to `rbxmonet.toml`:
+Or drop into a `.env` next to `rbxmonet.toml`:
 
 ```
-RBX_API_KEY=...
+RBX_MONET_API_KEY=...
+RBX_MONET_ROBLOSECURITY=...
 ```
+
+See `.env.example` in the repo for the canonical shape.
+
+> ⚠️ `.ROBLOSECURITY` is account-takeover material. Treat it like a
+> password. If it leaks (e.g. you commit it to git or paste it in
+> chat), rotate immediately at <https://www.roblox.com/my/account#!/security>
+> → "Log out of all other sessions".
 
 **Scopes** (configure on the API key in the Creator Dashboard):
 
-| Feature       | Required scopes                                                                 |
-|---------------|---------------------------------------------------------------------------------|
-| Game passes   | `game-pass:read`, `game-pass:write`                                             |
-| Dev products  | `developer-product:read`, `developer-product:write`                             |
-| Subscriptions | `universe.subscription-product.subscription:read` (read only — see Limitations) |
-| Badges        | `legacy-universe.badge:write`, `legacy-badge:manage` (update only — see Limitations) |
+| Feature       | Required `RBX_MONET_API_KEY` scopes                                             | Also needs `RBX_MONET_ROBLOSECURITY`? |
+|---------------|---------------------------------------------------------------------------------|----------------------------------------|
+| Game passes   | `game-pass:read`, `game-pass:write`                                             | no                                     |
+| Dev products  | `developer-product:read`, `developer-product:write`                             | no                                     |
+| Subscriptions | `universe.subscription-product.subscription:read` (read only — see Limitations) | no                                     |
+| Badges (list) | `legacy-universe.badge:write`, `legacy-badge:manage`                            | no                                     |
+| Badges (PATCH)| same as above                                                                   | **yes** — legacy endpoint needs session |
 
 ---
 

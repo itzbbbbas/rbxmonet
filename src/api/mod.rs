@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use reqwest::Client;
+use reqwest::{Client, Url, cookie::Jar};
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 // use reqwest_retry::{RetryTransientMiddleware, policies::ExponentialBackoff};
 use tokio::sync::Mutex;
@@ -20,8 +20,22 @@ lazy_static::lazy_static! {
         // let retry_policy = ExponentialBackoff::builder()
         //         .build_with_max_retries(5);
 
+        let jar = Arc::new(Jar::default());
+
+        if let Ok(cookie) = std::env::var("RBX_MONET_ROBLOSECURITY") {
+            let cookie = cookie.trim();
+            if !cookie.is_empty() {
+                let url: Url = "https://www.roblox.com/".parse().unwrap();
+                jar.add_cookie_str(
+                    &format!(".ROBLOSECURITY={cookie}; Domain=.roblox.com; Path=/"),
+                    &url,
+                );
+            }
+        }
+
         let client = Client::builder()
             .user_agent(format!("rbxmonet/{}", env!("CARGO_PKG_VERSION")))
+            .cookie_provider(jar)
             .build().unwrap();
 
         ClientBuilder::new(client)
