@@ -1,6 +1,6 @@
 [package]
 name = "rbxmonet"
-version = "0.1.25"
+version = "0.1.26"
 edition = "2024"
 authors = ["Jack Fox <jack@infernal.io>"]
 description = "Fork of rbx-products — generates monets.luau without type cast."
