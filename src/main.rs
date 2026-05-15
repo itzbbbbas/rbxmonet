@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use clap::{Parser, Subcommand};
 use log::info;
 
@@ -66,16 +64,21 @@ async fn main() {
     init_logging();
     let _ = color_eyre::install();
 
-    let api_key_set = std::env::var("RBX_MONET_API_KEY")
+    if std::env::var("RBX_MONET_API_KEY").ok().is_some() {
+        log::warn!(
+            "RBX_MONET_API_KEY is deprecated \u{2014} rename to RBXMONET_API_KEY (rbxmonet >= 0.1.25)"
+        );
+    }
+    let api_key_set = std::env::var("RBXMONET_API_KEY")
         .ok()
         .map(|v| !v.trim().is_empty())
         .unwrap_or(false);
     info!(
-        "auth: RBX_MONET_API_KEY={}",
+        "auth: RBXMONET_API_KEY={}",
         if api_key_set { "set" } else { "MISSING" }
     );
     if api_key_set {
-        if let Some(token) = std::env::var("RBX_MONET_API_KEY").ok() {
+        if let Some(token) = std::env::var("RBXMONET_API_KEY").ok() {
             api::set_api_token(token).await;
         }
     }
@@ -100,22 +103,8 @@ async fn main() {
                 return;
             }
 
-            let products = sync::products::VCSProducts {
-                metadata: sync::products::Metadata {
-                    universe_id: 1234,
-                    discount_prefix: Some("💲{}% OFF💲 ".to_string()),
-                    name_filters: None,
-                },
-                codegen: sync::products::CodegenConfig {
-                    output: Some("products.luau".to_string()),
-                    ..Default::default()
-                },
-                passes: HashMap::new(),
-                products: HashMap::new(),
-                badges: HashMap::new(),
-            };
-
-            match products.save_products().await {
+            let template = include_str!("templates/rbxmonet.toml.template");
+            match std::fs::write("rbxmonet.toml", template) {
                 Ok(_) => {
                     info!("rbxmonet.toml initialized successfully.");
                     Ok(())
@@ -125,7 +114,12 @@ async fn main() {
         }
         Commands::Download => Downloader::download(args.overwrite).await,
         Commands::Sync => {
-            let auto_confirm = args.auto_confirm || env_truthy("RBX_MONET_AUTO_CONFIRM");
+            if std::env::var("RBX_MONET_AUTO_CONFIRM").ok().is_some() {
+                log::warn!(
+                    "RBX_MONET_AUTO_CONFIRM is deprecated \u{2014} rename to RBXMONET_AUTO_CONFIRM"
+                );
+            }
+            let auto_confirm = args.auto_confirm || env_truthy("RBXMONET_AUTO_CONFIRM");
             Uploader::upload(args.overwrite, auto_confirm).await
         }
         Commands::RegenLuau => {

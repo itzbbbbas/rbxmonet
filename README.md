@@ -35,7 +35,7 @@ Via [Rokit](https://github.com/rojo-rbx/rokit) (recommended for Roblox projects)
 ```toml
 # rokit.toml
 [tools]
-rbxmonet = "itzbbbbas/rbxmonet@0.1.24"
+rbxmonet = "itzbbbbas/rbxmonet@0.1.25"
 ```
 
 ```bash
@@ -70,14 +70,14 @@ cargo +stable-x86_64-pc-windows-gnu build --release
 `rbxmonet` uses a single Roblox Open Cloud API key for everything (game passes, developer products, badges, icon uploads).
 
 ```powershell
-$env:RBX_MONET_API_KEY = "<your Open Cloud API key>"
+$env:RBXMONET_API_KEY = "<your Open Cloud API key>"
 ```
 
 Or drop into a `.env` next to `rbxmonet.toml`:
 
 ```
-RBX_MONET_API_KEY=...
-# RBX_MONET_AUTO_CONFIRM=true   # optional; skip diff viewer in `sync`
+RBXMONET_API_KEY=...
+# RBXMONET_AUTO_CONFIRM=true   # optional; skip diff viewer in `sync`
 ```
 
 See `.env.example` for the canonical shape.
@@ -114,7 +114,7 @@ Global flags:
 -a, --auto-confirm   In `sync`, skip the diff viewer and apply every diff (does NOT affect download semantics).
 ```
 
-Resolution order for `--auto-confirm`: CLI flag > `RBX_MONET_AUTO_CONFIRM` env (`1` / `true` / `yes`, case-insensitive) > default (show diff viewer). Bare `rbxmonet sync` with neither shows the diff TUI like before.
+Resolution order for `--auto-confirm`: CLI flag > `RBXMONET_AUTO_CONFIRM` env (`1` / `true` / `yes`, case-insensitive) > default (show diff viewer). Bare `rbxmonet sync` with neither shows the diff TUI like before.
 
 ---
 
@@ -122,9 +122,9 @@ Resolution order for `--auto-confirm`: CLI flag > `RBX_MONET_AUTO_CONFIRM` env (
 
 ```toml
 [metadata]
-universe-id     = 9946763161               # numeric Roblox universe id
-discount-prefix = "💲{}% OFF💲 "           # {} is substituted with the discount percent
-name-filters    = []                       # regex list applied to remote names on download
+universe_id     = 9946763161               # numeric Roblox universe id
+discount_prefix = "💲{}% OFF💲 "           # {} is substituted with the discount percent
+name_filters    = []                       # regex list applied to remote names on download
 
 [codegen]
 output     = "src/ReplicatedFirst/monets.luau"   # required; omit to skip Luau generation
@@ -135,29 +135,29 @@ output     = "src/ReplicatedFirst/monets.luau"   # required; omit to skip Luau g
 
 [passes.vip]                               # slug becomes the Luau key
 id              = 1834607988               # written by `download`; you may leave it out for new entries
-name            = "V.I.P"                  # internal name (display name = discount-prefix + name)
+name            = "V.I.P"                  # internal name (display name = discount_prefix + name)
 description     = "Daily perks"
 price           = 199                      # Robux
 active          = true
 discount        = 10                       # 0–100; 0 disables the discount prefix
-regional-pricing = true
+regional_pricing = true
 icon            = "assets/icons/vip.png"   # optional; uploaded on create + update
 
 # MARK: Products
 
-[products.starter-pack]
+[products.starter_pack]
 id              = 3554032826
 name            = "Starter Pack"
 description     = ""
 price           = 199
 active          = true
 discount        = 0
-regional-pricing = true
+regional_pricing = true
 icon            = "assets/icons/starter.png"
 
 # MARK: Badges
 
-[badges.first-win]
+[badges.first_win]
 id              = 2147483648               # leave unset to have `sync` create the badge
 name            = "First Win"
 description     = "Awarded for your first victory"
@@ -165,15 +165,15 @@ active          = true                     # maps to badge `enabled`
 icon            = "assets/icons/first-win.png"
 ```
 
-> Renamed from `[gamepasses.*]` → `[passes.*]` in v0.1.24. Loading an older toml errors with a migration hint.
+> v0.1.24: renamed `[gamepasses.*]` → `[passes.*]`. v0.1.25: schema fields switched from kebab-case to snake_case (e.g. `universe-id` → `universe_id`); kebab keys still parse for backward compat but `save_products` rewrites them to snake. Download-derived slugs use `_` instead of `-` (e.g. `[passes.starter_pack]` not `[passes.starter-pack]`).
 
 ### Slug keys
 
-The header key (`vip` / `starter-pack` / `first-win`) is what shows up in the generated Luau table. Game code looks items up by this slug, not by display name:
+The header key (`vip` / `starter_pack` / `first_win`) is what shows up in the generated Luau table. Game code looks items up by this slug, not by display name:
 
 ```luau
-monets.Passes.vip.id   -- 1834607988
-monets.Products["starter-pack"].price   -- 199
+monets.Passes.vip.id          -- 1834607988
+monets.Products.starter_pack.price   -- 199
 ```
 
 Slug syntax follows TOML bare-key rules: `[a-zA-Z0-9_-]`. Use quotes for anything outside that set:
@@ -191,7 +191,7 @@ When `discount > 0`, the generated `name` field in `monets.luau` becomes:
 <discount-prefix with {} -> discount> + name
 ```
 
-So `discount = 10` + `discount-prefix = "💲{}% OFF💲 "` + `name = "V.I.P"` →
+So `discount = 10` + `discount_prefix = "💲{}% OFF💲 "` + `name = "V.I.P"` →
 `name = "💲10% OFF💲 V.I.P"` in the Luau output. The TOML stays clean (`name = "V.I.P"`).
 
 ### `[codegen]` — output structure
@@ -228,7 +228,7 @@ Output under default **flat** style:
 
 ```luau
 return {
-    ["Items.Badges.first-win"] = { id = ..., price = 0, name = "First Win", description = "..." },
+    ["Items.Badges.first_win"] = { id = ..., price = 0, name = "First Win", description = "..." },
     ["Passes.legacy_vip"] = { id = 1234567 },
     ["Passes.vip"] = { id = 1834607988, price = 179, name = "V.I.P", description = "" },
     ["Shop.Premium.vip"] = { id = 1834607988, price = 179, name = "V.I.P", description = "" },
@@ -241,7 +241,7 @@ Output under `style = "nested"`:
 return {
     Items = {
         Badges = {
-            ["first-win"] = { id = ..., price = 0, name = "First Win", description = "..." },
+            first_win = { id = ..., price = 0, name = "First Win", description = "..." },
         },
     },
     Passes = {
@@ -263,12 +263,11 @@ When `typescript = true`, rbxmonet writes a `.d.ts` sidecar next to the `.luau` 
 export interface Pass { id: number; price: number; name: string; description: string }
 export interface Product { id: number; price: number; name: string; description: string }
 export interface Badge { id: number; price: number; name: string; description: string }
-export interface IdLeaf { id: number }
 
 declare const monets: {
     "Passes.vip": Pass;
-    "Passes.legacy_vip": IdLeaf;
-    "Items.Badges.first-win": Badge;
+    "Passes.legacy_vip": { id: number };
+    "Items.Badges.first_win": Badge;
 };
 export default monets;
 ```
@@ -309,19 +308,18 @@ Backslashes must be escaped (TOML strings).
 export type Pass = { id: number, price: number, name: string, description: string }
 export type Product = { id: number, price: number, name: string, description: string }
 export type Badge = { id: number, price: number, name: string, description: string }
-export type IdLeaf = { id: number }
 
 return {
     Passes = {
-        ["vip"] = { id = 1834607988, price = 199, name = "💲10% OFF💲 V.I.P", description = "Daily perks" }
+        vip = { id = 1834607988, price = 199, name = "💲10% OFF💲 V.I.P", description = "Daily perks" }
     },
 
     Products = {
-        ["starter-pack"] = { id = 3554032826, price = 199, name = "Starter Pack", description = "" }
+        starter_pack = { id = 3554032826, price = 199, name = "Starter Pack", description = "" }
     },
 
     Badges = {
-        ["first-win"] = { id = 2147483648, price = 0, name = "First Win", description = "Awarded for your first victory" }
+        first_win = { id = 2147483648, price = 0, name = "First Win", description = "Awarded for your first victory" }
     }
 }
 ```
@@ -342,8 +340,8 @@ MarketplaceService:PromptGamePassPurchase(player, vipId)
 **First-time setup for an existing universe**
 
 ```bash
-rbxmonet init                            # creates a starter rbxmonet.toml
-# edit [metadata].universe-id and [codegen].output
+rbxmonet init                            # creates a starter rbxmonet.toml mirroring the schema above
+# edit [metadata].universe_id and [codegen].output
 rbxmonet download                        # pulls every pass / product / badge
 git add rbxmonet.toml src/ReplicatedFirst/monets.luau
 ```
@@ -369,7 +367,7 @@ rbxmonet regen-luau
 **CI / unattended sync**
 
 ```bash
-RBX_MONET_AUTO_CONFIRM=true rbxmonet sync
+RBXMONET_AUTO_CONFIRM=true rbxmonet sync
 # or equivalently
 rbxmonet sync -a
 ```
@@ -406,7 +404,7 @@ Confirm prompt:
 When a prune happens, you'll see:
 
 ```
-INFO pruned 1 pass entries no longer in remote: legacy-vip (use `git checkout rbxmonet.toml` to undo)
+INFO pruned 1 pass entries no longer in remote: legacy_vip (use `git checkout rbxmonet.toml` to undo)
 ```
 
 Git is the safety net.
@@ -449,8 +447,9 @@ Errors are also printed to stderr unconditionally as `error: <msg>`, regardless 
 
 ## 🗒️ Changelog highlights
 
+- **0.1.25** — Env vars `RBX_MONET_API_KEY` → `RBXMONET_API_KEY`, `RBX_MONET_AUTO_CONFIRM` → `RBXMONET_AUTO_CONFIRM` (old names log a deprecation warning, no longer read). TOML field keys switched kebab-case → snake_case (`universe-id` → `universe_id`, `discount-prefix` → `discount_prefix`, `name-filters` → `name_filters`, `regional-pricing` → `regional_pricing`). Kebab keys still parse via serde alias for backward compat; `save_products` rewrites them to snake on next save. Download-derived slugs use `_` instead of `-` (e.g. `[passes.starter_pack]`). Existing hyphenated slugs are auto-renamed on next load (`get_products`). `export type IdLeaf` dropped from Luau output; TS `IdLeaf` interface replaced with inline `{ id: number }`. `rbxmonet init` now writes a starter template matching the README schema (with `# MARK:` headers + commented example entries).
 - **0.1.24** — Renamed `[gamepasses.*]` → `[passes.*]` (TOML), `gamepasses` → `passes` everywhere internally, default Luau output table `Gamepasses` → `Passes`, Luau/TS export type `Gamepass` → `Pass`. Loading an older toml errors with a migration hint; set `[codegen.paths] passes = "Gamepasses"` to keep the old Luau key.
-- **0.1.23** — `--auto-confirm` / `-a` flag + `RBX_MONET_AUTO_CONFIRM` env to skip the diff TUI on `sync`.
+- **0.1.23** — `--auto-confirm` / `-a` flag + `RBXMONET_AUTO_CONFIRM` env to skip the diff TUI on `sync`.
 - **0.1.22** — Removed all `RBX_MONET_ROBLOSECURITY` cookie code; everything now flows through Open Cloud. Removed Subscriptions entirely (Roblox-side limitation). Added per-section Luau + TS export types (`Pass`, `Product`, `Badge`, `IdLeaf`).
 - **0.1.21** — Moved output path into `[codegen] output`. Added `style = "flat" | "nested"` (flat default). Added `typescript = true` for `.d.ts` sidecar emission.
 - **0.1.20** — Added `[codegen]`, `[codegen.paths]`, `[codegen.extra]`, and per-item `path = "..."` overrides.

@@ -27,7 +27,7 @@ pub fn format_name<T: Into<String>>(name: T) -> String {
         )
         .trim()
         .to_string();
-    name = name.replace(|c: char| c.is_whitespace(), "-");
+    name = name.replace(|c: char| c.is_whitespace(), "_");
     name
 }
 

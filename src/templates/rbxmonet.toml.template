@@ -1,0 +1,50 @@
+[metadata]
+universe_id = 1234                         # numeric Roblox universe id
+discount_prefix = "💲{}% OFF💲 "           # {} is substituted with the discount percent
+name_filters = []                          # regex list applied to remote names on download
+
+[codegen]
+output = "src/ReplicatedFirst/monets.luau" # required; omit to skip Luau generation
+# style = "flat"                           # "flat" (default) or "nested"
+# typescript = false                       # also emit <output>.d.ts sidecar
+
+[codegen.paths]
+# passes   = "Gamepasses"                  # rename / re-nest section roots in Luau output
+# products = "Products"
+# badges   = "Items.Badges"
+
+[codegen.extra]
+# "Gamepasses.legacy_vip" = 1234567        # inject id leaves for assets rbxmonet doesn't track
+
+# MARK: Passes
+
+# [passes.vip]
+# id = 1834607988                          # written by `download`; omit for new entries
+# name = "V.I.P"
+# description = "Daily perks"
+# price = 199
+# active = true
+# discount = 10
+# regional_pricing = true
+# icon = "assets/icons/vip.png"
+
+# MARK: Products
+
+# [products.starter_pack]
+# id = 3554032826
+# name = "Starter Pack"
+# description = ""
+# price = 199
+# active = true
+# discount = 0
+# regional_pricing = true
+# icon = "assets/icons/starter.png"
+
+# MARK: Badges
+
+# [badges.first_win]
+# id = 2147483648                          # leave unset to have `sync` create the badge
+# name = "First Win"
+# description = "Awarded for your first victory"
+# active = true
+# icon = "assets/icons/first-win.png"
