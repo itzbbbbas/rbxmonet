@@ -136,7 +136,14 @@ impl Downloader {
             }
 
             let key = match existing.is_none() {
-                true => name.clone(),
+                true => {
+                    let section: &std::collections::HashMap<String, Product> = match product_type {
+                        ProductType::Pass => &local_products_data.passes,
+                        ProductType::DevProduct => &local_products_data.products,
+                        ProductType::Badge => &local_products_data.badges,
+                    };
+                    disambiguate_slug(section, &name, product.id)
+                }
                 false => existing.unwrap().0.clone(),
             };
 
@@ -156,6 +163,38 @@ impl Downloader {
         local_products_data.serialize_luau().await?;
 
         Ok(())
+    }
+}
+
+/// Pick a unique map key for a new remote product. If the canonical slug
+/// is already taken by an entry with a *different* id, suffix with the
+/// product id so the new entry doesn't silently overwrite. If the slug
+/// is empty (canonical name reduced to nothing) fall back to `item_<id>`.
+fn disambiguate_slug(
+    section: &std::collections::HashMap<String, Product>,
+    base: &str,
+    incoming_id: Option<u64>,
+) -> String {
+    let base = if base.is_empty() {
+        format!("item_{}", incoming_id.unwrap_or(0))
+    } else {
+        base.to_string()
+    };
+
+    match section.get(&base) {
+        Some(existing) if existing.id != incoming_id => {
+            let suffix = incoming_id.unwrap_or(0);
+            log::warn!(
+                "slug '{}' collides (existing id {:?} vs new id {:?}); using '{}_{}'",
+                base,
+                existing.id,
+                incoming_id,
+                base,
+                suffix
+            );
+            format!("{}_{}", base, suffix)
+        }
+        _ => base,
     }
 }
 

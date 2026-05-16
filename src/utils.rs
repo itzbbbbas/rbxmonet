@@ -8,10 +8,10 @@ lazy_static! {
     static ref DEFAULT_FILTERS: Vec<Regex> = vec![
         // Remove our discount prefix from the name before canonicalizing, since it doesn't affect the actual product
         r#"💲.*?% OFF💲"#,
-        // Remove everything within brackets, including the brackets themselves
-        r#"\[.*?\]"#,
-        // Remove everything non alphanumeric except whitespace
-        r#"[^a-zA-Z0-9!?,.\-\s]"#,
+        // Remove everything non alphanumeric except whitespace, brackets, and parens.
+        // Brackets are preserved so tags like `[Gift] Foo` survive into the slug
+        // (`gift_foo`) instead of collapsing to `foo` and colliding with sibling items.
+        r#"[^a-zA-Z0-9!?,.\-\s\[\]\(\)]"#,
     ]
     .iter()
     .map(|s| Regex::new(s).unwrap())
