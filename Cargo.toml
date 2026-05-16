@@ -1,6 +1,6 @@
 [package]
 name = "rbxmonet"
-version = "0.1.27"
+version = "0.1.28"
 edition = "2024"
 authors = ["Jack Fox <jack@infernal.io>"]
 description = "Fork of rbx-products — generates monets.luau without type cast."
@@ -45,3 +45,4 @@ color-eyre = "0.6.5"
 futures = "0.3"
 regex = "1.12.3"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "bmp", "tga"] }
+bit-vec = "0.8"

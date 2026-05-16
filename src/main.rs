@@ -3,6 +3,7 @@ use log::info;
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
+mod alpha_bleed;
 mod api;
 pub mod sync;
 pub mod ui;

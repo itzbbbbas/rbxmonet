@@ -26,6 +26,14 @@ nest! {
             pub name_filters: Option<Vec<Regex>>,
         },
 
+        #[serde(default = "default_icons_config")]
+        pub icons: pub struct IconsConfig {
+            #[serde(default = "default_bleed")]
+            pub bleed: bool,
+            #[serde(default = "default_icon_dir")]
+            pub dir: String,
+        },
+
         #[serde(default)]
         pub codegen: pub struct CodegenConfig {
             #[serde(default)]
@@ -71,6 +79,21 @@ pub enum CodegenStyle {
     #[default]
     Flat,
     Nested,
+}
+
+fn default_bleed() -> bool {
+    true
+}
+
+fn default_icon_dir() -> String {
+    "icons".to_string()
+}
+
+fn default_icons_config() -> IconsConfig {
+    IconsConfig {
+        bleed: default_bleed(),
+        dir: default_icon_dir(),
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -135,9 +158,13 @@ impl VCSProducts {
         }
 
         let mut metadata = get_toml_value!(toml_products, "metadata");
+        let mut icons = get_toml_value!(toml_products, "icons");
         let mut passes = get_toml_value!(toml_products, "passes");
         let mut products = get_toml_value!(toml_products, "products");
         let mut badges = get_toml_value!(toml_products, "badges");
+
+        icons["bleed"] = toml_edit::value(self.icons.bleed);
+        icons["dir"] = toml_edit::value(self.icons.dir.clone());
 
         if let Some(discount_prefix) = &self.metadata.discount_prefix {
             metadata["discount_prefix"] = toml_edit::value(discount_prefix.clone());
@@ -179,6 +206,7 @@ impl VCSProducts {
         toml_products.remove("subscriptions");
         toml_products.remove("gamepasses");
         toml_products["metadata"] = toml_edit::Item::Table(metadata);
+        toml_products["icons"] = toml_edit::Item::Table(icons);
         toml_products["passes"] = toml_edit::Item::Table(passes);
         toml_products["products"] = toml_edit::Item::Table(products);
         toml_products["badges"] = toml_edit::Item::Table(badges);

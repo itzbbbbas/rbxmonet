@@ -3,6 +3,10 @@ universe_id = 1234                         # numeric Roblox universe id
 discount_prefix = "💲{}% OFF💲 "           # {} is substituted with the discount percent
 name_filters = []                          # regex list applied to remote names on download
 
+[icons]
+bleed = true                               # alpha-bleed icons before upload (fixes black halos)
+dir = "icons"                              # directory icons will be downloaded into (reserved)
+
 [codegen]
 output = "src/ReplicatedFirst/monets.luau" # required; omit to skip Luau generation
 # style = "flat"                           # "flat" (default) or "nested"

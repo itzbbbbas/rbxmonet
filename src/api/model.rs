@@ -9,7 +9,9 @@ macro_rules! paginate_struct {
         #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
         #[serde(rename_all = "camelCase")]
         pub struct $name {
+            #[serde(default)]
             pub $field: Vec<$type>,
+            #[serde(default, alias = "nextPageCursor", alias = "next_page_cursor")]
             pub next_page_token: Option<String>,
         }
     };
@@ -114,7 +116,7 @@ pub struct BadgeMetadata {
 pub struct BadgePage {
     #[serde(default)]
     pub data: Vec<Badge>,
-    #[serde(default)]
+    #[serde(default, alias = "nextPageToken", alias = "next_page_token")]
     pub next_page_cursor: Option<String>,
 }
 

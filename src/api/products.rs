@@ -116,7 +116,14 @@ pub async fn fetch_all_badges(universe_id: u64) -> Result<Option<Vec<Badge>>> {
 
         let resp = check_status(resp, "list badges").await?;
         let page: BadgePage = json_or_explain(resp, "list badges").await?;
+        let got = page.data.len();
         badges.extend(page.data);
+        log::debug!(
+            "badges page: +{} (total {}), next_cursor={:?}",
+            got,
+            badges.len(),
+            page.next_page_cursor.as_deref()
+        );
 
         match page.next_page_cursor {
             Some(c) if !c.is_empty() => {
@@ -220,13 +227,20 @@ pub async fn fetch_all_dev_products(universe_id: u64) -> Result<Option<Vec<DevPr
         let resp = check_status(req.send().await?, "list dev products").await?;
         let page: DevProductPage = json_or_explain(resp, "list dev products").await?;
 
+        let got = page.developer_products.len();
         products.extend(page.developer_products);
+        log::debug!(
+            "dev products page: +{} (total {}), next_token={:?}",
+            got,
+            products.len(),
+            page.next_page_token.as_deref()
+        );
 
         match page.next_page_token {
-            Some(cursor) => {
+            Some(cursor) if !cursor.is_empty() => {
                 page_cursor = cursor;
             }
-            None => break,
+            _ => break,
         }
     }
 
@@ -256,13 +270,20 @@ pub async fn fetch_all_passes(universe_id: u64) -> Result<Option<Vec<GamePass>>>
         let resp = check_status(req.send().await?, "list passes").await?;
         let page: GamePassPage = json_or_explain(resp, "list passes").await?;
 
+        let got = page.game_passes.len();
         passes.extend(page.game_passes);
+        log::debug!(
+            "passes page: +{} (total {}), next_token={:?}",
+            got,
+            passes.len(),
+            page.next_page_token.as_deref()
+        );
 
         match page.next_page_token {
-            Some(cursor) => {
+            Some(cursor) if !cursor.is_empty() => {
                 page_cursor = cursor;
             }
-            None => break,
+            _ => break,
         }
     }
 
@@ -417,7 +438,12 @@ async fn prepare_icon_bytes(icon_path: &str) -> Result<(Vec<u8>, String, &'stati
     } else {
         img
     };
-    let rgba = image::DynamicImage::ImageRgba8(processed.to_rgba8());
+    let mut rgba = image::DynamicImage::ImageRgba8(processed.to_rgba8());
+
+    if crate::alpha_bleed::bleed_enabled() {
+        crate::alpha_bleed::alpha_bleed(&mut rgba);
+    }
+
     let mut buf = Vec::with_capacity(64 * 1024);
     rgba.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
         .map_err(|e| format!("encode icon '{}' as png: {}", icon_path, e))?;

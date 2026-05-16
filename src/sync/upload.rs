@@ -431,6 +431,7 @@ impl Uploader {
 
     pub async fn upload(overwrite: bool, auto_confirm: bool) -> Result<()> {
         let mut uploader = Uploader::create().await?;
+        crate::alpha_bleed::set_bleed_enabled(uploader.local_products.icons.bleed);
 
         let mut run_upload = async || -> Result<()> {
             uploader.upload_empty(overwrite).await?;
