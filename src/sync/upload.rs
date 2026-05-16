@@ -354,7 +354,11 @@ impl Uploader {
             return Ok(());
         }
 
-        info!("syncing {} product(s)", diffs.len());
+        let total = diffs.len();
+        info!("syncing {} product(s)", total);
+
+        let mut succeeded = 0usize;
+        let mut failed: Vec<(ProductType, u64, String, String)> = Vec::new();
 
         for (product_type, id) in diffs {
             let mut local_product = match product_type {
@@ -387,23 +391,51 @@ impl Uploader {
             let update_request = ProductUpdateRequest::from(&local_product);
             let icon_path = local_product.icon.as_deref();
 
-            match product_type {
+            let result: Result<()> = match product_type {
                 ProductType::Pass => {
-                    update_pass(universe_id, id, &update_request, icon_path).await?;
+                    update_pass(universe_id, id, &update_request, icon_path).await
                 }
                 ProductType::DevProduct => {
-                    update_dev_product(universe_id, id, &update_request, icon_path).await?;
+                    update_dev_product(universe_id, id, &update_request, icon_path).await
                 }
                 ProductType::Badge => {
                     let badge_request = BadgeUpdateRequest::from(&local_product);
-                    update_badge(id, &badge_request).await?;
+                    update_badge(id, &badge_request).await
+                }
+            };
+
+            match result {
+                Ok(()) => {
+                    succeeded += 1;
+                    info!("synced {:?} '{}' (id: {})", product_type, name, id);
+                }
+                Err(e) => {
+                    let err_str = e.to_string();
+                    log::error!(
+                        "failed to sync {:?} '{}' (id: {}): {} \u{2014} continuing",
+                        product_type,
+                        name,
+                        id,
+                        err_str
+                    );
+                    failed.push((product_type, id, name, err_str));
                 }
             }
-
-            info!("synced {:?} '{}' (id: {})", product_type, name, id);
         }
 
-        info!("finished syncing all passes/products");
+        if failed.is_empty() {
+            info!("finished syncing all {} product(s)", total);
+        } else {
+            log::warn!(
+                "sync finished: {}/{} ok, {} failed",
+                succeeded,
+                total,
+                failed.len()
+            );
+            for (pt, id, name, err) in &failed {
+                log::warn!("  failed {:?} '{}' (id: {}): {}", pt, name, id, err);
+            }
+        }
 
         Ok(())
     }

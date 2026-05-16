@@ -35,7 +35,7 @@ Via [Rokit](https://github.com/rojo-rbx/rokit) (recommended for Roblox projects)
 ```toml
 # rokit.toml
 [tools]
-rbxmonet = "itzbbbbas/rbxmonet@0.1.29"
+rbxmonet = "itzbbbbas/rbxmonet@0.1.30"
 ```
 
 ```bash
