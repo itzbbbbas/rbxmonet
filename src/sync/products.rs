@@ -56,6 +56,7 @@ nest! {
             pub description: Option<String>,
             pub active: bool,
             pub discount: Option<u8>,
+            #[serde(default)]
             pub price: i64,
             #[serde(alias = "regional-pricing")]
             pub regional_pricing: Option<bool>,
@@ -200,7 +201,14 @@ impl VCSProducts {
             products[&product.0] = product.1.into();
         }
         for badge in &self.badges {
-            badges[&badge.0] = badge.1.into();
+            let mut item: toml_edit::Item = badge.1.into();
+            if let Some(t) = item.as_table_mut() {
+                t.remove("price");
+                t.remove("regional_pricing");
+                t.remove("regional-pricing");
+                t.remove("discount");
+            }
+            badges[&badge.0] = item;
         }
 
         toml_products.remove("subscriptions");
@@ -300,7 +308,7 @@ impl VCSProducts {
         contents += "export type Kind = \"Pass\" | \"Product\" | \"Badge\"\n";
         contents += "export type Pass = { id: number, price: number, kind: Kind, name: string, description: string }\n";
         contents += "export type Product = { id: number, price: number, kind: Kind, name: string, description: string }\n";
-        contents += "export type Badge = { id: number, price: number, kind: Kind, name: string, description: string }\n\n";
+        contents += "export type Badge = { id: number, kind: Kind, name: string, description: string }\n\n";
 
         match self.codegen.style {
             CodegenStyle::Flat => render_flat(&mut contents, &tree),
@@ -318,7 +326,7 @@ impl VCSProducts {
             dts += "export type Kind = \"Pass\" | \"Product\" | \"Badge\";\n";
             dts += "export interface Pass { id: number; price: number; kind: \"Pass\"; name: string; description: string }\n";
             dts += "export interface Product { id: number; price: number; kind: \"Product\"; name: string; description: string }\n";
-            dts += "export interface Badge { id: number; price: number; kind: \"Badge\"; name: string; description: string }\n\n";
+            dts += "export interface Badge { id: number; kind: \"Badge\"; name: string; description: string }\n\n";
             match self.codegen.style {
                 CodegenStyle::Flat => render_flat_dts(&mut dts, &tree, &var_name),
                 CodegenStyle::Nested => render_nested_dts(&mut dts, &tree, &var_name),
@@ -420,16 +428,27 @@ fn render_leaf(out: &mut String, leaf: &LeafKind) {
             price,
             name,
             description,
-        } => {
-            out.push_str(&format!(
-                "{{ id = {}, price = {}, kind = {:?} :: Kind, name = {:?}, description = {:?} }}",
-                id,
-                price,
-                section.ts_name(),
-                name,
-                description
-            ));
-        }
+        } => match section {
+            SectionKind::Badge => {
+                out.push_str(&format!(
+                    "{{ id = {}, kind = {:?} :: Kind, name = {:?}, description = {:?} }}",
+                    id,
+                    section.ts_name(),
+                    name,
+                    description
+                ));
+            }
+            _ => {
+                out.push_str(&format!(
+                    "{{ id = {}, price = {}, kind = {:?} :: Kind, name = {:?}, description = {:?} }}",
+                    id,
+                    price,
+                    section.ts_name(),
+                    name,
+                    description
+                ));
+            }
+        },
         LeafKind::IdOnly(id) => {
             out.push_str(&format!("{{ id = {} }}", id));
         }
@@ -614,16 +633,27 @@ fn render_node(out: &mut String, node: &CodegenNode, depth: usize) {
             price,
             name,
             description,
-        }) => {
-            out.push_str(&format!(
-                "{{ id = {}, price = {}, kind = {:?} :: Kind, name = {:?}, description = {:?} }}",
-                id,
-                price,
-                section.ts_name(),
-                name,
-                description
-            ));
-        }
+        }) => match section {
+            SectionKind::Badge => {
+                out.push_str(&format!(
+                    "{{ id = {}, kind = {:?} :: Kind, name = {:?}, description = {:?} }}",
+                    id,
+                    section.ts_name(),
+                    name,
+                    description
+                ));
+            }
+            _ => {
+                out.push_str(&format!(
+                    "{{ id = {}, price = {}, kind = {:?} :: Kind, name = {:?}, description = {:?} }}",
+                    id,
+                    price,
+                    section.ts_name(),
+                    name,
+                    description
+                ));
+            }
+        },
         CodegenNode::Leaf(LeafKind::IdOnly(id)) => {
             out.push_str(&format!("{{ id = {} }}", id));
         }

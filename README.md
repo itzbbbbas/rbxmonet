@@ -35,7 +35,7 @@ Via [Rokit](https://github.com/rojo-rbx/rokit) (recommended for Roblox projects)
 ```toml
 # rokit.toml
 [tools]
-rbxmonet = "itzbbbbas/rbxmonet@0.1.30"
+rbxmonet = "itzbbbbas/rbxmonet@0.1.31"
 ```
 
 ```bash
@@ -459,6 +459,7 @@ Errors are also printed to stderr unconditionally as `error: <msg>`, regardless 
 
 ## 🗒️ Changelog highlights
 
+- **0.1.31** — Badges no longer carry a `price` field. `price: i64` on `Product` switched to `#[serde(default)]` so `[badges.<slug>]` blocks without `price` parse cleanly (fixes `TOML parse error ... missing field 'price'`). `save_products` strips `price` / `regional_pricing` / `discount` from every badge table on write. Luau / TS leaf renderer omits `price` for `Badge` leaves; `export type Badge` and `export interface Badge` drop `price: number`. Passes + products unchanged.
 - **0.1.27** — Build-only fix: regenerated `Cargo.lock` so `cargo build --release --locked` (used by the GitHub Actions release workflow) succeeds. No runtime / behavior changes vs 0.1.26.
 - **0.1.26** — Added `kind: Kind` discriminator (`"Pass" | "Product" | "Badge"`) on every rich Luau leaf (`{ id, price, kind = "Pass" :: Kind, name, description }`). New `export type Kind` line in Luau output and matching `export type Kind` + literal-typed interface fields in the `.d.ts` sidecar. Default Luau section names lowercased: `Passes` → `passes`, `Products` → `products`, `Badges` → `badges` (flat keys: `["passes.vip"]` instead of `["Passes.vip"]`). Set `[codegen.paths] passes = "Passes"` to keep the old PascalCase.
 - **0.1.25** — Env vars `RBX_MONET_API_KEY` → `RBXMONET_API_KEY`, `RBX_MONET_AUTO_CONFIRM` → `RBXMONET_AUTO_CONFIRM` (old names log a deprecation warning, no longer read). TOML field keys switched kebab-case → snake_case (`universe-id` → `universe_id`, `discount-prefix` → `discount_prefix`, `name-filters` → `name_filters`, `regional-pricing` → `regional_pricing`). Kebab keys still parse via serde alias for backward compat; `save_products` rewrites them to snake on next save. Download-derived slugs use `_` instead of `-` (e.g. `[passes.starter_pack]`). Existing hyphenated slugs are auto-renamed on next load (`get_products`). `export type IdLeaf` dropped from Luau output; TS `IdLeaf` interface replaced with inline `{ id: number }`. `rbxmonet init` now writes a starter template matching the README schema (with `# MARK:` headers + commented example entries).

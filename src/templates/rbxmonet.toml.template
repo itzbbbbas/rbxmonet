@@ -50,5 +50,5 @@ output = "src/ReplicatedFirst/monets.luau" # required; omit to skip Luau generat
 # id = 2147483648                          # leave unset to have `sync` create the badge
 # name = "First Win"
 # description = "Awarded for your first victory"
-# active = true
+# active = true                            # maps to badge `enabled`; badges have no `price`
 # icon = "assets/icons/first-win.png"
