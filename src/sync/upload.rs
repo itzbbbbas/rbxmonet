@@ -1,16 +1,30 @@
+use std::collections::HashMap;
+
 use log::info;
 
 use crate::Result;
 use crate::api::model::{BadgeUpdateRequest, ProductUpdateRequest};
 use crate::api::products::{
     create_badge, create_dev_product, create_pass, fetch_all_products, fetch_badge_metadata,
-    fetch_free_badges_quota, update_badge, update_dev_product, update_pass,
+    fetch_free_badges_quota, hash_icon_file, update_badge, update_badge_icon, update_dev_product,
+    update_pass,
 };
 
 const DEFAULT_ICON: &str = "assets/Image/missing_texture.png";
 use crate::sync::products::{MultiProduct, Product, ProductType, VCSProducts};
 use crate::ui::confirm::{ConfirmState, ConfirmViewer};
-use crate::ui::diffs::{DiffViewer, ProductDiffs};
+use crate::ui::diffs::{DiffChange, DiffViewer, ProductDiff, ProductDiffs};
+
+#[derive(Clone)]
+struct IconDirty {
+    path: String,
+    new_hash: String,
+    old_hash: Option<String>,
+}
+
+fn short_hash(h: &str) -> String {
+    h.chars().take(8).collect()
+}
 
 pub struct Uploader {
     local_products: VCSProducts,
@@ -114,8 +128,15 @@ impl Uploader {
                         "created Badge '{}' (id: {}, cost: {} R$)",
                         badge.name, new.id, expected_cost
                     );
+                    let new_hash = hash_icon_file(&icon_path).await;
                     if let Some(b) = self.local_products.badges.get_mut(&slug) {
                         b.id = Some(new.id);
+                        if let Some(icon_id) = new.icon_image_id {
+                            b.icon_id = Some(icon_id);
+                        }
+                        if let Some(h) = new_hash {
+                            b.icon_hash = Some(h);
+                        }
                     }
                     if let Some(q) = free_quota.as_mut()
                         && *q > 0
@@ -148,35 +169,35 @@ impl Uploader {
         }
 
         let universe_id = self.local_products.metadata.universe_id.clone();
-        let upload_product =
-            async |universe_id: u64, product: Product, product_type: ProductType| -> Result<u64> {
-                let update_request = ProductUpdateRequest::from(&product);
-                let icon_path = product.icon.as_deref();
-                let product_id = match product_type {
-                    ProductType::Pass => {
-                        create_pass(universe_id, &update_request, icon_path)
-                            .await?
-                            .game_pass_id
-                    }
+        let upload_product = async |universe_id: u64,
+                                    product: Product,
+                                    product_type: ProductType|
+              -> Result<(u64, Option<u64>)> {
+            let update_request = ProductUpdateRequest::from(&product);
+            let icon_path = product.icon.as_deref();
+            let (product_id, icon_id) = match product_type {
+                ProductType::Pass => {
+                    let gp = create_pass(universe_id, &update_request, icon_path).await?;
+                    (gp.game_pass_id, Some(gp.icon_asset_id))
+                }
 
-                    ProductType::DevProduct => {
-                        create_dev_product(universe_id, &update_request, icon_path)
-                            .await?
-                            .product_id
-                    }
+                ProductType::DevProduct => {
+                    let dp = create_dev_product(universe_id, &update_request, icon_path).await?;
+                    (dp.product_id, dp.icon_image_asset_id)
+                }
 
-                    ProductType::Badge => {
-                        return Err("badge creates handled by upload_badge_creates".into());
-                    }
-                };
-
-                info!(
-                    "uploaded {:?} '{}' with id {}",
-                    product_type, product.name, product_id
-                );
-
-                Ok(product_id)
+                ProductType::Badge => {
+                    return Err("badge creates handled by upload_badge_creates".into());
+                }
             };
+
+            info!(
+                "uploaded {:?} '{}' with id {}",
+                product_type, product.name, product_id
+            );
+
+            Ok((product_id, icon_id))
+        };
 
         let mut pass_futures = vec![];
         let mut devproduct_futures = vec![];
@@ -192,6 +213,7 @@ impl Uploader {
             if pass.id.is_none() {
                 let universe_id = universe_id.clone();
                 let name = name.clone();
+                let icon_path = pass.icon.clone();
                 let mut pass = pass.clone();
 
                 apply_discount_prefix(
@@ -200,11 +222,16 @@ impl Uploader {
                 );
 
                 let future = (async move {
-                    let product_id =
-                        upload_product(universe_id, pass, ProductType::Pass).await;
+                    let result = upload_product(universe_id, pass, ProductType::Pass).await;
 
-                    match product_id {
-                        Ok(id) => Some((name, id)),
+                    match result {
+                        Ok((id, icon_id)) => {
+                            let new_hash = match &icon_path {
+                                Some(p) => hash_icon_file(p).await,
+                                None => None,
+                            };
+                            Some((name, id, icon_id, new_hash))
+                        }
                         Err(e) => {
                             log::error!("failed to upload pass '{}': {}", name, e);
                             None
@@ -221,6 +248,7 @@ impl Uploader {
             if devproduct.id.is_none() {
                 let universe_id = universe_id.clone();
                 let name = name.clone();
+                let icon_path = devproduct.icon.clone();
                 let mut devproduct = devproduct.clone();
 
                 apply_discount_prefix(
@@ -229,12 +257,18 @@ impl Uploader {
                 );
 
                 let future = (async move {
-                    let product_id =
+                    let result =
                         upload_product(universe_id, devproduct.clone(), ProductType::DevProduct)
                             .await;
 
-                    match product_id {
-                        Ok(id) => Some((name, id)),
+                    match result {
+                        Ok((id, icon_id)) => {
+                            let new_hash = match &icon_path {
+                                Some(p) => hash_icon_file(p).await,
+                                None => None,
+                            };
+                            Some((name, id, icon_id, new_hash))
+                        }
                         Err(e) => {
                             log::error!("failed to upload dev product '{}': {}", name, e);
                             None
@@ -248,26 +282,33 @@ impl Uploader {
         }
 
         pass_futures.into_iter().for_each(|res| {
-            if let Some((name, id)) = res {
-                self.local_products
-                    .passes
-                    .get_mut(name.as_str())
-                    .unwrap()
-                    .id = Some(id as u64);
+            if let Some((name, id, icon_id, icon_hash)) = res {
+                let p = self.local_products.passes.get_mut(name.as_str()).unwrap();
+                p.id = Some(id as u64);
+                if let Some(icon_id) = icon_id {
+                    p.icon_id = Some(icon_id);
+                }
+                if let Some(h) = icon_hash {
+                    p.icon_hash = Some(h);
+                }
             }
         });
 
         devproduct_futures.into_iter().for_each(|res| {
-            if let Some((name, id)) = res {
-                self.local_products
-                    .products
-                    .get_mut(name.as_str())
-                    .unwrap()
-                    .id = Some(id as u64);
+            if let Some((name, id, icon_id, icon_hash)) = res {
+                let p = self.local_products.products.get_mut(name.as_str()).unwrap();
+                p.id = Some(id as u64);
+                if let Some(icon_id) = icon_id {
+                    p.icon_id = Some(icon_id);
+                }
+                if let Some(h) = icon_hash {
+                    p.icon_hash = Some(h);
+                }
             }
         });
 
         self.local_products.save_products().await?;
+        self.local_products.save_lock().await?;
         self.local_products.serialize_luau().await?;
 
         Ok(())
@@ -288,6 +329,58 @@ impl Uploader {
         all_local_products.extend(self.local_products.passes.values().cloned());
         all_local_products.extend(self.local_products.products.values().cloned());
         all_local_products.extend(self.local_products.badges.values().cloned());
+
+        // Pre-pass: hash every local icon, compare to stored icon_hash. Build
+        // map keyed by (product_type, id) so the diff phase can inject a
+        // ProductDiff::Icon row and so the push phase knows whether to send
+        // the multipart icon part.
+        let mut icon_dirty: HashMap<(ProductType, u64), IconDirty> = HashMap::new();
+        for local_product in &all_local_products {
+            let Some(id) = local_product.id else { continue };
+            let Some(icon_path) = local_product.icon.as_deref() else {
+                continue;
+            };
+            let Some(new_hash) = hash_icon_file(icon_path).await else {
+                continue;
+            };
+            let old_hash = local_product.icon_hash.clone();
+            let needs = force_icons || old_hash.as_deref() != Some(new_hash.as_str());
+            if !needs {
+                continue;
+            }
+            let product_type = if self
+                .local_products
+                .passes
+                .values()
+                .any(|p| p.id == Some(id))
+            {
+                ProductType::Pass
+            } else if self
+                .local_products
+                .products
+                .values()
+                .any(|p| p.id == Some(id))
+            {
+                ProductType::DevProduct
+            } else if self
+                .local_products
+                .badges
+                .values()
+                .any(|p| p.id == Some(id))
+            {
+                ProductType::Badge
+            } else {
+                continue;
+            };
+            icon_dirty.insert(
+                (product_type, id),
+                IconDirty {
+                    path: icon_path.to_string(),
+                    new_hash,
+                    old_hash,
+                },
+            );
+        }
 
         product_diffs.extend(
             all_local_products
@@ -313,22 +406,34 @@ impl Uploader {
                     let computed = local_product
                         .diff(&remote_product, Some(&self.local_products.metadata));
 
-                    if let Some(diff) = computed {
-                        return Some((product_type, diff));
-                    }
+                    let icon_row =
+                        icon_dirty.get(&(product_type, id)).map(|dirty| {
+                            DiffChange::Changed(ProductDiff::Icon(
+                                dirty
+                                    .old_hash
+                                    .as_deref()
+                                    .map(short_hash)
+                                    .unwrap_or_else(|| "<unset>".to_string()),
+                                short_hash(&dirty.new_hash),
+                            ))
+                        });
 
-                    if force_icons && local_product.icon.is_some() {
-                        return Some((
+                    match (computed, icon_row) {
+                        (Some(mut diff), Some(row)) => {
+                            diff.diffs.push(row);
+                            Some((product_type, diff))
+                        }
+                        (Some(diff), None) => Some((product_type, diff)),
+                        (None, Some(row)) => Some((
                             product_type,
                             ProductDiffs {
                                 name: local_product.name.clone(),
                                 id,
-                                diffs: vec![],
+                                diffs: vec![row],
                             },
-                        ));
+                        )),
+                        (None, None) => None,
                     }
-
-                    None
                 })
                 .collect::<Vec<_>>(),
         );
@@ -410,9 +515,10 @@ impl Uploader {
             );
 
             let update_request = ProductUpdateRequest::from(&local_product);
-            let icon_path = local_product.icon.as_deref();
+            let dirty = icon_dirty.get(&(product_type, id)).cloned();
+            let icon_path = dirty.as_ref().map(|d| d.path.as_str());
 
-            let result: Result<()> = match product_type {
+            let result: Result<Option<u64>> = match product_type {
                 ProductType::Pass => {
                     update_pass(universe_id, id, &update_request, icon_path).await
                 }
@@ -421,14 +527,47 @@ impl Uploader {
                 }
                 ProductType::Badge => {
                     let badge_request = BadgeUpdateRequest::from(&local_product);
-                    update_badge(id, &badge_request).await
+                    let metadata_result = update_badge(id, &badge_request).await;
+                    if let Err(e) = metadata_result {
+                        Err(e)
+                    } else if let Some(d) = &dirty {
+                        update_badge_icon(id, &d.path).await
+                    } else {
+                        Ok(None)
+                    }
                 }
             };
 
             match result {
-                Ok(()) => {
+                Ok(new_icon_id) => {
                     succeeded += 1;
                     info!("synced {:?} '{}' (id: {})", product_type, name, id);
+
+                    let local_mut: Option<&mut Product> = match product_type {
+                        ProductType::Pass => self
+                            .local_products
+                            .passes
+                            .values_mut()
+                            .find(|gp| gp.id == Some(id)),
+                        ProductType::DevProduct => self
+                            .local_products
+                            .products
+                            .values_mut()
+                            .find(|p| p.id == Some(id)),
+                        ProductType::Badge => self
+                            .local_products
+                            .badges
+                            .values_mut()
+                            .find(|b| b.id == Some(id)),
+                    };
+                    if let Some(p) = local_mut {
+                        if let Some(new_id) = new_icon_id {
+                            p.icon_id = Some(new_id);
+                        }
+                        if let Some(d) = &dirty {
+                            p.icon_hash = Some(d.new_hash.clone());
+                        }
+                    }
                 }
                 Err(e) => {
                     let err_str = e.to_string();
@@ -498,6 +637,7 @@ impl Uploader {
         let upload_result = run_upload().await;
 
         uploader.local_products.save_products().await?;
+        uploader.local_products.save_lock().await?;
         uploader.local_products.serialize_luau().await?;
 
         if let Err(e) = upload_result {

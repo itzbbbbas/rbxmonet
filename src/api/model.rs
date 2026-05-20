@@ -34,6 +34,8 @@ nest! {
         pub is_immutable: bool,
         pub created_timestamp: String,
         pub updated_timestamp: String,
+        #[serde(default, alias = "iconAssetId")]
+        pub icon_image_asset_id: Option<u64>,
     }
 }
 
@@ -128,6 +130,13 @@ pub struct BadgeUpdateRequest {
     pub enabled: bool,
 }
 
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BadgeIconResponse {
+    #[serde(default, alias = "iconImageId", alias = "imageAssetId")]
+    pub icon_image_id: Option<u64>,
+}
+
 paginate_struct!(DevProduct, DevProductPage, developer_products);
 paginate_struct!(GamePass, GamePassPage, game_passes);
 
@@ -179,6 +188,7 @@ impl From<&GamePass> for Product {
             regional_pricing: features.map(|f| f.iter().any(|i| i == "RegionalPricing")),
             icon: None,
             icon_id: Some(gp.icon_asset_id),
+            icon_hash: None,
             path: None,
         }
     }
@@ -197,6 +207,7 @@ impl From<&Badge> for Product {
             regional_pricing: None,
             icon: None,
             icon_id: b.icon_image_id,
+            icon_hash: None,
             path: None,
         }
     }
@@ -232,7 +243,8 @@ impl From<&DevProduct> for Product {
                 .map_or(0, |pi| pi.default_price_in_robux as i64),
             regional_pricing: features.map(|f| f.iter().any(|i| i == "RegionalPricing")),
             icon: None,
-            icon_id: None,
+            icon_id: dp.icon_image_asset_id,
+            icon_hash: None,
             path: None,
         }
     }

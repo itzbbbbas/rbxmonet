@@ -110,6 +110,7 @@ impl Downloader {
                 },
                 icon: existing.and_then(|(_, p)| p.icon.clone()),
                 icon_id: product.icon_id.or_else(|| existing.and_then(|(_, p)| p.icon_id)),
+                icon_hash: existing.and_then(|(_, p)| p.icon_hash.clone()),
                 path: existing.and_then(|(_, p)| p.path.clone()),
                 regional_pricing: if let Some(existing_product) = existing {
                     if overwrite {
@@ -159,6 +160,7 @@ impl Downloader {
 
         info!("finished merging products, saving to disk");
         local_products_data.save_products().await?;
+        local_products_data.save_lock().await?;
 
         info!("serializing products to luau format");
         local_products_data.serialize_luau().await?;

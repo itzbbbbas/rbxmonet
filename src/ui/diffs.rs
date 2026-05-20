@@ -29,6 +29,7 @@ nest! {
                     Price(u64, u64),
                     RegionalPricing(bool, bool),
                     Active(bool, bool),
+                    Icon(String, String),
 
                 }),
                 Changed(ProductDiff),
@@ -161,6 +162,10 @@ impl DiffViewer {
                         left_lines.push(Line::from(format!("  Active: {}", old)));
                         right_lines.push(Line::from(format!("  Active: {}", new)));
                     }
+                    ProductDiff::Icon(old, new) => {
+                        left_lines.push(Line::from(format!("  Icon: {}", old)));
+                        right_lines.push(Line::from(format!("  Icon: {}", new)));
+                    }
                 },
                 DiffChange::Changed(pd) => match pd {
                     ProductDiff::Prefix(_, _) => {}
@@ -214,6 +219,16 @@ impl DiffViewer {
                                 .style(Style::default().fg(Color::Green)),
                         );
                     }
+                    ProductDiff::Icon(old, new) => {
+                        left_lines.push(
+                            Line::from(format!("- Icon: {}", old))
+                                .style(Style::default().fg(Color::Red)),
+                        );
+                        right_lines.push(
+                            Line::from(format!("+ Icon: {}", new))
+                                .style(Style::default().fg(Color::Green)),
+                        );
+                    }
                 },
                 DiffChange::Created(pd) => match pd {
                     ProductDiff::Prefix(_, _) => {}
@@ -244,6 +259,12 @@ impl DiffViewer {
                     ProductDiff::Active(_, new) => {
                         right_lines.push(
                             Line::from(format!("+ Active: {}", new))
+                                .style(Style::default().fg(Color::Green)),
+                        );
+                    }
+                    ProductDiff::Icon(_, new) => {
+                        right_lines.push(
+                            Line::from(format!("+ Icon: {}", new))
                                 .style(Style::default().fg(Color::Green)),
                         );
                     }

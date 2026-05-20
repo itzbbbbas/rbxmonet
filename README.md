@@ -17,7 +17,9 @@ Forked from [OutOfBears/rbx-products](https://github.com/OutOfBears/rbx-products
 - Single Open Cloud API key for **everything** (game passes, developer products, badges) — no cookie / `.ROBLOSECURITY` required.
 - Full **Badges** support: list / create / update / icon upload via the `legacy-badges` + `legacy-publish` Open Cloud surfaces (mirrors [dev-bap/rbxsync](https://github.com/dev-bap/rbxsync)).
 - Auto-prune deleted entries on `download` (stale `[gamepasses.*] / [products.*] / [badges.*]` blocks vanish when the remote id is gone; `id`-less pending creates are preserved).
-- `icon = "path/to.png"` on any entry — uploaded as the asset icon on create + update (multipart, auto-resized + RGBA8 re-encoded).
+- `icon = "path/to.png"` on any entry — uploaded as the asset icon on create + update (multipart, auto-resized + RGBA8 re-encoded). Returned icon asset id is emitted in `monets.luau` as `icon = "rbxassetid://<id>"` for passes, products, **and** badges.
+- BLAKE3 icon hash + asset id are tracked in `rbxmonet.lock.toml` (auto-generated, parallel to rbxsync's lockfile) so `rbxmonet.toml` stays free of machine-written keys. `sync` only re-uploads an icon when the on-disk file's hash actually changed. Pass `-f` / `--force-icons` to bypass the gate.
+- Badge icon updates after creation via `POST legacy-publish/v1/badges/{id}/icon` (parallel to rbxsync). Editing `icon = "..."` on an existing badge now pushes the new icon on `sync`.
 - `[codegen]` block: configurable output path, `flat` or `nested` style, optional `.d.ts` sidecar, `[codegen.paths]` to rename/re-nest sections, `[codegen.extra]` to inject id leaves for assets rbxmonet doesn't track, and per-item `path = "..."` overrides.
 - Per-section Luau + TypeScript export types (`Gamepass`, `Product`, `Badge`, `IdLeaf`).
 - Slug-keyed Luau output (`["vip"]` instead of `["💲10% OFF💲 V.I.P"]`), formatted display in the `name` field.
@@ -142,6 +144,7 @@ active          = true
 discount        = 10                       # 0–100; 0 disables the discount prefix
 regional_pricing = true
 icon            = "assets/icons/vip.png"   # optional; uploaded on create + update
+# (icon_id + icon_hash are tracked in rbxmonet.lock.toml — never write them here.)
 
 # MARK: Products
 
@@ -459,6 +462,8 @@ Errors are also printed to stderr unconditionally as `error: <msg>`, regardless 
 
 ## 🗒️ Changelog highlights
 
+- **0.1.35** — Icon asset id + BLAKE3 hash moved out of `rbxmonet.toml` and into a new auto-generated `rbxmonet.lock.toml` (parallel to rbxsync's lockfile model). Main TOML stays human-only — machine state lives next to it. Migration is automatic: `get_products` still reads `icon_id` / `icon_hash` keys from old `rbxmonet.toml` entries; the next `save_products` strips them and the next `save_lock` writes them into the lockfile. Add `rbxmonet.lock.toml` to your repo (commit it — it tracks remote state alongside `id`s).
+- **0.1.34** — Icon round-trip on `sync`. (1) `update_pass` / `update_dev_product` now parse the response body and capture `icon_asset_id` / `iconImageAssetId` back into `icon_id` — no more `download` round-trip to refresh icons. (2) New `icon_hash` field (BLAKE3 of raw on-disk bytes) persists next to `icon_id` in `rbxmonet.toml`; `sync` only re-uploads when the hash changed (use `-f` / `--force-icons` to bypass). (3) Dev products now emit `icon = "rbxassetid://<id>"` in `monets.luau` (previously skipped). `export type Product` adds `icon: string?`; `.d.ts` interface adds `icon?: string`. (4) New `update_badge_icon` (POST `legacy-publish/v1/badges/{id}/icon`) — editing `icon = "..."` on an existing badge now uploads the new icon. (5) `ProductDiff::Icon(old8, new8)` row in the diff TUI when an icon's hash changed. (6) Missing / unreadable icon file degrades to a warn + continue instead of aborting the entry's update; other fields still sync.
 - **0.1.31** — Badges no longer carry a `price` field. `price: i64` on `Product` switched to `#[serde(default)]` so `[badges.<slug>]` blocks without `price` parse cleanly (fixes `TOML parse error ... missing field 'price'`). `save_products` strips `price` / `regional_pricing` / `discount` from every badge table on write. Luau / TS leaf renderer omits `price` for `Badge` leaves; `export type Badge` and `export interface Badge` drop `price: number`. Passes + products unchanged.
 - **0.1.27** — Build-only fix: regenerated `Cargo.lock` so `cargo build --release --locked` (used by the GitHub Actions release workflow) succeeds. No runtime / behavior changes vs 0.1.26.
 - **0.1.26** — Added `kind: Kind` discriminator (`"Pass" | "Product" | "Badge"`) on every rich Luau leaf (`{ id, price, kind = "Pass" :: Kind, name, description }`). New `export type Kind` line in Luau output and matching `export type Kind` + literal-typed interface fields in the `.d.ts` sidecar. Default Luau section names lowercased: `Passes` → `passes`, `Products` → `products`, `Badges` → `badges` (flat keys: `["passes.vip"]` instead of `["Passes.vip"]`). Set `[codegen.paths] passes = "Passes"` to keep the old PascalCase.

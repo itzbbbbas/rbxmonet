@@ -31,7 +31,7 @@ async fn json_or_explain<T: serde::de::DeserializeOwned>(
 
 use crate::Result;
 use crate::api::model::{
-    BadgeMetadata, BadgePage, BadgeUpdateRequest, DevProductPage, GamePassPage,
+    BadgeIconResponse, BadgeMetadata, BadgePage, BadgeUpdateRequest, DevProductPage, GamePassPage,
     ProductUpdateRequest,
 };
 use crate::sync::products::{MultiProduct, Product};
@@ -297,7 +297,16 @@ async fn attach_icon_part(
     icon_path: Option<&str>,
 ) -> Result<reqwest::multipart::Form> {
     let Some(path) = icon_path else { return Ok(form) };
-    let (bytes, filename, mime) = prepare_icon_bytes(path).await?;
+    let (bytes, filename, mime) = match prepare_icon_bytes(path).await {
+        Ok(t) => t,
+        Err(e) => {
+            warn!(
+                "icon '{}' unreadable \u{2014} skipping icon upload ({})",
+                path, e
+            );
+            return Ok(form);
+        }
+    };
     let part = reqwest::multipart::Part::bytes(bytes)
         .file_name(filename)
         .mime_str(mime)?;
@@ -309,7 +318,7 @@ pub async fn update_dev_product(
     product_id: u64,
     update: &ProductUpdateRequest,
     icon_path: Option<&str>,
-) -> Result<()> {
+) -> Result<Option<u64>> {
     let url = format!(
         "https://apis.roblox.com/developer-products/v2/universes/{}/developer-products/{}",
         universe_id, product_id
@@ -322,9 +331,10 @@ pub async fn update_dev_product(
         .send()
         .await?;
 
-    check_status(resp, "update dev product").await?;
-
-    Ok(())
+    let resp = check_status(resp, "update dev product").await?;
+    let parsed: std::result::Result<DevProduct, _> =
+        json_or_explain(resp, "update dev product").await;
+    Ok(parsed.ok().and_then(|dp| dp.icon_image_asset_id))
 }
 
 pub async fn update_pass(
@@ -332,7 +342,7 @@ pub async fn update_pass(
     pass_id: u64,
     update: &ProductUpdateRequest,
     icon_path: Option<&str>,
-) -> Result<()> {
+) -> Result<Option<u64>> {
     let url = format!(
         "https://apis.roblox.com/game-passes/v1/universes/{}/game-passes/{}",
         universe_id, pass_id
@@ -345,9 +355,45 @@ pub async fn update_pass(
         .send()
         .await?;
 
-    check_status(resp, "update pass").await?;
+    let resp = check_status(resp, "update pass").await?;
+    let parsed: std::result::Result<GamePass, _> = json_or_explain(resp, "update pass").await;
+    Ok(parsed.ok().map(|gp| gp.icon_asset_id))
+}
 
-    Ok(())
+/// POST the legacy-publish icon update endpoint for a badge. Returns the
+/// new icon image asset id when the response carries one.
+pub async fn update_badge_icon(badge_id: u64, icon_path: &str) -> Result<Option<u64>> {
+    let (bytes, filename, mime) = prepare_icon_bytes(icon_path).await?;
+    let part = reqwest::multipart::Part::bytes(bytes)
+        .file_name(filename)
+        .mime_str(mime)?;
+    let form = reqwest::multipart::Form::new().part("request", part);
+
+    let url = format!(
+        "https://apis.roblox.com/legacy-publish/v1/badges/{}/icon",
+        badge_id
+    );
+    let resp = open_cloud_client()
+        .post(&url)
+        .multipart(form)
+        .send()
+        .await?;
+    let resp = check_status(resp, "update badge icon").await?;
+    let parsed: std::result::Result<BadgeIconResponse, _> =
+        json_or_explain(resp, "update badge icon").await;
+    Ok(parsed.ok().and_then(|b| b.icon_image_id))
+}
+
+/// BLAKE3 hash of an icon file's raw on-disk bytes. Returns None when the
+/// file is unreadable so callers can degrade gracefully rather than abort.
+pub async fn hash_icon_file(icon_path: &str) -> Option<String> {
+    match tokio::fs::read(icon_path).await {
+        Ok(bytes) => Some(blake3::hash(&bytes).to_hex().to_string()),
+        Err(e) => {
+            log::warn!("icon '{}' unreadable for hashing: {}", icon_path, e);
+            None
+        }
+    }
 }
 
 pub async fn create_dev_product(
