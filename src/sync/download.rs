@@ -109,6 +109,7 @@ impl Downloader {
                     product.price
                 },
                 icon: existing.and_then(|(_, p)| p.icon.clone()),
+                icon_id: product.icon_id.or_else(|| existing.and_then(|(_, p)| p.icon_id)),
                 path: existing.and_then(|(_, p)| p.path.clone()),
                 regional_pricing: if let Some(existing_product) = existing {
                     if overwrite {

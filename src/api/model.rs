@@ -178,6 +178,7 @@ impl From<&GamePass> for Product {
                 .map_or(0, |pi| pi.default_price_in_robux as i64),
             regional_pricing: features.map(|f| f.iter().any(|i| i == "RegionalPricing")),
             icon: None,
+            icon_id: Some(gp.icon_asset_id),
             path: None,
         }
     }
@@ -195,6 +196,7 @@ impl From<&Badge> for Product {
             price: 0,
             regional_pricing: None,
             icon: None,
+            icon_id: b.icon_image_id,
             path: None,
         }
     }
@@ -230,6 +232,7 @@ impl From<&DevProduct> for Product {
                 .map_or(0, |pi| pi.default_price_in_robux as i64),
             regional_pricing: features.map(|f| f.iter().any(|i| i == "RegionalPricing")),
             icon: None,
+            icon_id: None,
             path: None,
         }
     }
