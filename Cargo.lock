@@ -2116,7 +2116,7 @@ dependencies = [
 
 [[package]]
 name = "rbxmonet"
-version = "0.1.35"
+version = "0.1.36"
 dependencies = [
  "async-trait",
  "bit-vec 0.8.0",

@@ -600,6 +600,55 @@ impl Uploader {
         Ok(())
     }
 
+    /// Re-fetch the universe after a sync and copy `icon_id` from each
+    /// remote entry onto the matching local entry. Needed because Roblox's
+    /// PATCH endpoints for passes + dev products don't echo the new
+    /// `iconAssetId` back in the response body.
+    async fn refresh_icon_ids(&mut self) -> Result<()> {
+        let snapshot = fetch_all_products(self.local_products.metadata.universe_id).await?;
+        for remote in &snapshot.products {
+            match remote {
+                MultiProduct::Pass(rp) => {
+                    if let Some(id) = rp.id
+                        && let Some(local) = self
+                            .local_products
+                            .passes
+                            .values_mut()
+                            .find(|p| p.id == Some(id))
+                        && rp.icon_id.is_some()
+                    {
+                        local.icon_id = rp.icon_id;
+                    }
+                }
+                MultiProduct::DevProduct(rp) => {
+                    if let Some(id) = rp.id
+                        && let Some(local) = self
+                            .local_products
+                            .products
+                            .values_mut()
+                            .find(|p| p.id == Some(id))
+                        && rp.icon_id.is_some()
+                    {
+                        local.icon_id = rp.icon_id;
+                    }
+                }
+                MultiProduct::Badge(rp) => {
+                    if let Some(id) = rp.id
+                        && let Some(local) = self
+                            .local_products
+                            .badges
+                            .values_mut()
+                            .find(|p| p.id == Some(id))
+                        && rp.icon_id.is_some()
+                    {
+                        local.icon_id = rp.icon_id;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     async fn create() -> Result<Self> {
         info!("fetching local products");
         let local_products_data = VCSProducts::get_products().await?;
@@ -635,6 +684,16 @@ impl Uploader {
         };
 
         let upload_result = run_upload().await;
+
+        // Roblox PATCH responses on game-passes + developer-products are
+        // sparse — they don't carry the new icon_asset_id back. Re-fetch
+        // the universe so the lockfile picks up the asset ids the icon
+        // uploads produced.
+        if upload_result.is_ok() {
+            if let Err(e) = uploader.refresh_icon_ids().await {
+                log::warn!("post-sync icon-id refresh failed: {} \u{2014} lockfile may be missing icon_id for newly uploaded icons; run `rbxmonet download` to backfill", e);
+            }
+        }
 
         uploader.local_products.save_products().await?;
         uploader.local_products.save_lock().await?;
