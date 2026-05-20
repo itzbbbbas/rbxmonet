@@ -273,7 +273,12 @@ impl Uploader {
         Ok(())
     }
 
-    async fn upload_modified(&mut self, overwrite: bool, auto_confirm: bool) -> Result<()> {
+    async fn upload_modified(
+        &mut self,
+        overwrite: bool,
+        auto_confirm: bool,
+        force_icons: bool,
+    ) -> Result<()> {
         let mut product_diffs = vec![];
 
         let universe_id = self.local_products.metadata.universe_id.clone();
@@ -305,9 +310,25 @@ impl Uploader {
                             None => return None,
                         };
 
-                    local_product
-                        .diff(&remote_product, Some(&self.local_products.metadata))
-                        .map(|diff| (product_type, diff))
+                    let computed = local_product
+                        .diff(&remote_product, Some(&self.local_products.metadata));
+
+                    if let Some(diff) = computed {
+                        return Some((product_type, diff));
+                    }
+
+                    if force_icons && local_product.icon.is_some() {
+                        return Some((
+                            product_type,
+                            ProductDiffs {
+                                name: local_product.name.clone(),
+                                id,
+                                diffs: vec![],
+                            },
+                        ));
+                    }
+
+                    None
                 })
                 .collect::<Vec<_>>(),
         );
@@ -461,13 +482,15 @@ impl Uploader {
         })
     }
 
-    pub async fn upload(overwrite: bool, auto_confirm: bool) -> Result<()> {
+    pub async fn upload(overwrite: bool, auto_confirm: bool, force_icons: bool) -> Result<()> {
         let mut uploader = Uploader::create().await?;
         crate::alpha_bleed::set_bleed_enabled(uploader.local_products.icons.bleed);
 
         let mut run_upload = async || -> Result<()> {
             uploader.upload_empty(overwrite).await?;
-            uploader.upload_modified(overwrite, auto_confirm).await?;
+            uploader
+                .upload_modified(overwrite, auto_confirm, force_icons)
+                .await?;
 
             Ok(())
         };

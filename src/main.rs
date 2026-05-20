@@ -25,6 +25,10 @@ struct Args {
     /// Skip diff viewer in `sync` — auto-confirm all changes
     #[arg(short = 'a', long, default_value_t = false, global = true)]
     auto_confirm: bool,
+    /// Force re-upload of every entry's icon during `sync` (even when no other field diffs).
+    /// Roblox API does not expose icon comparison, so icon-only edits otherwise get skipped.
+    #[arg(long = "force-icons", default_value_t = false, global = true)]
+    force_icons: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -121,7 +125,7 @@ async fn main() {
                 );
             }
             let auto_confirm = args.auto_confirm || env_truthy("RBXMONET_AUTO_CONFIRM");
-            Uploader::upload(args.overwrite, auto_confirm).await
+            Uploader::upload(args.overwrite, auto_confirm, args.force_icons).await
         }
         Commands::RegenLuau => {
             info!("Regenerating Luau file from rbxmonet.toml...");
