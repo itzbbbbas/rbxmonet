@@ -52,3 +52,21 @@ output = "src/ReplicatedFirst/monets.luau" # required; omit to skip Luau generat
 # description = "Awarded for your first victory"
 # active = true                            # maps to badge `enabled`; badges have no `price`
 # icon = "assets/icons/first-win.png"
+
+# MARK: Subscriptions
+#
+# Hand-maintained. Open Cloud does NOT expose a list / read endpoint
+# for SubscriptionProduct definitions, so `rbxmonet download` cannot
+# populate this section automatically. Add entries here by hand using
+# ids from the Creator Dashboard, then run `rbxmonet regen-luau` (or
+# any `sync` / `download`) to regenerate monets.luau.
+# `rbxmonet sync` does NOT push subscription changes back to Roblox.
+#
+# [subscriptions.premium_monthly]
+# id = 7891234567
+# name = "Premium Monthly"
+# description = "Premium features renewed monthly"
+# active = true
+# period = "Monthly"
+# basic_price_tier = "PRICE_TIER_4_99"
+# icon = "assets/icons/premium.png"        # optional local override

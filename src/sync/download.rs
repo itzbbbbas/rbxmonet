@@ -25,7 +25,8 @@ impl Downloader {
             "fetched {} local products, {} remote products",
             local_products_data.passes.len()
                 + local_products_data.products.len()
-                + local_products_data.badges.len(),
+                + local_products_data.badges.len()
+                + local_products_data.subscriptions.len(),
             remote_snapshot.products.len()
         );
 
@@ -158,6 +159,15 @@ impl Downloader {
 
         prune_stale(&mut local_products_data, &snapshot);
 
+        // Subscription products: Open Cloud does NOT expose a list/read
+        // endpoint for SubscriptionProduct definitions (only individual
+        // user-subscription instances via
+        // `/cloud/v2/.../subscription-products/{spid}/subscriptions/{user_id}`).
+        // `[subscriptions.*]` blocks in rbxmonet.toml are therefore
+        // hand-maintained — `download` preserves them round-trip, and
+        // `serialize_luau` emits them into the codegen output. Run
+        // `rbxmonet regen-luau` after hand-edits to refresh monets.luau.
+
         info!("finished merging products, saving to disk");
         local_products_data.save_products().await?;
         local_products_data.save_lock().await?;
@@ -168,6 +178,7 @@ impl Downloader {
         Ok(())
     }
 }
+
 
 /// Pick a unique map key for a new remote product. If the canonical slug
 /// is already taken by an entry with a *different* id, suffix with the
