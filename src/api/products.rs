@@ -1,8 +1,96 @@
 use log::{info, warn};
-use reqwest::Response;
+use reqwest::{Response, StatusCode};
 
 use super::model::{Badge, DevProduct, GamePass};
 use super::open_cloud_client;
+
+const CREDENTIALS_URL: &str = "https://create.roblox.com/dashboard/credentials";
+
+/// Open Cloud API system + the scope(s) an operation needs. Used to turn a
+/// bare 401/403 into a message that names exactly what to enable on the key.
+struct RequiredPermission {
+    api_system: &'static str,
+    scopes: &'static [&'static str],
+}
+
+/// Map a human operation name (the `op` passed to [`check_status`]) to the
+/// API system and scope it requires. Returns `None` for operations not in
+/// the table so the caller can fall back to a generic message.
+fn required_permission(op: &str) -> Option<RequiredPermission> {
+    let (api_system, scopes): (&str, &[&str]) = match op {
+        "list passes" => ("game-passes", &["game-pass:read"]),
+        "create pass" | "update pass" => ("game-passes", &["game-pass:write"]),
+        "list dev products" => ("developer-products", &["developer-product:read"]),
+        "create dev product" | "update dev product" => {
+            ("developer-products", &["developer-product:write"])
+        }
+        "list badges" | "fetch badge metadata" | "fetch free-badges-quota" | "create badge"
+        | "update badge" | "update badge icon" => ("legacy-badges", &["legacy-badge:manage"]),
+        _ => return None,
+    };
+    Some(RequiredPermission { api_system, scopes })
+}
+
+/// Pull the human-readable message out of a Roblox error body
+/// (`{"errors":[{"message":"..."}]}` or `{"message":"..."}`), falling back to
+/// the raw body when it isn't recognizable JSON.
+fn extract_server_message(body: &str) -> String {
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(body) {
+        if let Some(msg) = value
+            .get("errors")
+            .and_then(|e| e.as_array())
+            .and_then(|a| a.first())
+            .and_then(|e| e.get("message"))
+            .and_then(|m| m.as_str())
+        {
+            return msg.to_string();
+        }
+        if let Some(msg) = value.get("message").and_then(|m| m.as_str()) {
+            return msg.to_string();
+        }
+    }
+    body.to_string()
+}
+
+/// Build a friendly, actionable message for a 401/403 that tells the user
+/// which Open Cloud permission the operation needs and how to grant it.
+fn unauthorized_message(op: &str, status: StatusCode, server_msg: &str) -> String {
+    let mut out = format!("{op}: Roblox rejected the request (HTTP {status}).\n");
+
+    match required_permission(op) {
+        Some(perm) => {
+            let scope_list = perm.scopes.join(", ");
+            out.push_str(&format!(
+                "\nThis operation needs the `{}` scope under the \"{}\" API system, \
+                 but your API key is missing it (or the key is invalid / expired / IP-restricted).\n",
+                scope_list, perm.api_system
+            ));
+            out.push_str("\nHow to fix:\n");
+            out.push_str(&format!("  1. Open {CREDENTIALS_URL}\n"));
+            out.push_str("  2. Edit your API key and expand \"Access Permissions\".\n");
+            out.push_str(&format!(
+                "  3. Under \"{}\", add: {}\n",
+                perm.api_system, scope_list
+            ));
+            out.push_str(
+                "  4. Make sure the key is enabled for this experience and not blocked by IP restrictions.\n",
+            );
+        }
+        None => {
+            out.push_str(
+                "\nYour API key was rejected. Check that it is valid, not expired, has the \
+                 permission this operation needs, is enabled for this experience, and is not \
+                 blocked by IP restrictions.\n",
+            );
+            out.push_str(&format!("  Manage keys: {CREDENTIALS_URL}\n"));
+        }
+    }
+
+    if !server_msg.is_empty() {
+        out.push_str(&format!("\nServer response: {server_msg}"));
+    }
+    out
+}
 
 async fn check_status(resp: Response, op: &str) -> Result<Response> {
     let status = resp.status();
@@ -11,6 +99,12 @@ async fn check_status(resp: Response, op: &str) -> Result<Response> {
     }
     let body = resp.text().await.unwrap_or_default();
     let trimmed = body.trim();
+
+    if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
+        let server_msg = extract_server_message(trimmed);
+        return Err(unauthorized_message(op, status, &server_msg).into());
+    }
+
     if trimmed.is_empty() {
         Err(format!("{op}: HTTP {status}").into())
     } else {
@@ -108,7 +202,9 @@ pub async fn fetch_all_badges(universe_id: u64) -> Result<Option<Vec<Badge>>> {
             || status == reqwest::StatusCode::UNAUTHORIZED
         {
             warn!(
-                "badges endpoint returned {} for universe {} \u{2014} skipping badges",
+                "badges endpoint returned {} for universe {} \u{2014} skipping badges \
+                 (key likely missing the `legacy-badge:manage` scope under \"legacy-badges\", \
+                 or not enabled for this experience)",
                 status, universe_id
             );
             return Ok(None);
@@ -494,4 +590,68 @@ async fn prepare_icon_bytes(icon_path: &str) -> Result<(Vec<u8>, String, &'stati
     rgba.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
         .map_err(|e| format!("encode icon '{}' as png: {}", icon_path, e))?;
     Ok((buf, format!("{}.png", base_name), "image/png"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn read_op_names_read_scope() {
+        let msg = unauthorized_message("list passes", StatusCode::UNAUTHORIZED, "Invalid API Key");
+        assert!(msg.contains("game-pass:read"), "msg: {msg}");
+        assert!(msg.contains("game-passes"), "msg: {msg}");
+        assert!(msg.contains("Invalid API Key"), "msg: {msg}");
+        assert!(msg.contains(CREDENTIALS_URL), "msg: {msg}");
+        assert!(msg.contains("401"), "msg: {msg}");
+    }
+
+    #[test]
+    fn mutation_op_names_write_scope() {
+        let msg = unauthorized_message("create pass", StatusCode::FORBIDDEN, "");
+        assert!(msg.contains("game-pass:write"), "msg: {msg}");
+        assert!(!msg.contains("Server response"), "msg: {msg}");
+    }
+
+    #[test]
+    fn dev_product_ops_map_correctly() {
+        assert!(
+            unauthorized_message("list dev products", StatusCode::UNAUTHORIZED, "")
+                .contains("developer-product:read")
+        );
+        assert!(
+            unauthorized_message("update dev product", StatusCode::FORBIDDEN, "")
+                .contains("developer-product:write")
+        );
+    }
+
+    #[test]
+    fn badge_ops_map_to_legacy_scope() {
+        let msg = unauthorized_message("create badge", StatusCode::UNAUTHORIZED, "");
+        assert!(msg.contains("legacy-badge:manage"), "msg: {msg}");
+        assert!(msg.contains("legacy-badges"), "msg: {msg}");
+    }
+
+    #[test]
+    fn unknown_op_falls_back_to_generic() {
+        let msg = unauthorized_message("frobnicate", StatusCode::UNAUTHORIZED, "boom");
+        assert!(msg.contains("API key was rejected"), "msg: {msg}");
+        assert!(msg.contains("boom"), "msg: {msg}");
+    }
+
+    #[test]
+    fn extracts_nested_error_message() {
+        let body = r#"{"errors":[{"code":0,"message":"Invalid API Key"}]}"#;
+        assert_eq!(extract_server_message(body), "Invalid API Key");
+    }
+
+    #[test]
+    fn extracts_top_level_message() {
+        assert_eq!(extract_server_message(r#"{"message":"Forbidden"}"#), "Forbidden");
+    }
+
+    #[test]
+    fn falls_back_to_raw_body_when_not_json() {
+        assert_eq!(extract_server_message("not json"), "not json");
+    }
 }

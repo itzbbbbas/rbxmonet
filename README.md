@@ -37,7 +37,7 @@ Via [Rokit](https://github.com/rojo-rbx/rokit) (recommended for Roblox projects)
 ```toml
 # rokit.toml
 [tools]
-rbxmonet = "itzbbbbas/rbxmonet@0.1.31"
+rbxmonet = "itzbbbbas/rbxmonet@0.1.38"
 ```
 
 ```bash
@@ -462,6 +462,7 @@ Errors are also printed to stderr unconditionally as `error: <msg>`, regardless 
 
 ## 🗒️ Changelog highlights
 
+- **0.1.38** — Friendlier auth errors. A `401`/`403` from Open Cloud no longer dumps the raw `Invalid API Key` JSON — it now names the exact scope the operation needs (e.g. `game-pass:read` under the `game-passes` API system), with step-by-step instructions to add it on the credentials dashboard. Server messages are parsed out of the error body, and the badges soft-skip warning now names its `legacy-badge:manage` scope too.
 - **0.1.36** — Post-sync refresh: after `sync` completes its uploads, re-fetch the universe and copy `icon_id` from remote entries onto local ones. Needed because Roblox's PATCH endpoints for passes + dev products don't echo the new `iconAssetId` back, so 0.1.35's `update_pass` / `update_dev_product` extracted None for icon id even when the upload itself succeeded. Lockfile now correctly captures `icon_id` for every freshly-uploaded icon on the next sync after upgrade.
 - **0.1.35** — Icon asset id + BLAKE3 hash moved out of `rbxmonet.toml` and into a new auto-generated `rbxmonet.lock.toml` (parallel to rbxsync's lockfile model). Main TOML stays human-only — machine state lives next to it. Migration is automatic: `get_products` still reads `icon_id` / `icon_hash` keys from old `rbxmonet.toml` entries; the next `save_products` strips them and the next `save_lock` writes them into the lockfile. Add `rbxmonet.lock.toml` to your repo (commit it — it tracks remote state alongside `id`s).
 - **0.1.34** — Icon round-trip on `sync`. (1) `update_pass` / `update_dev_product` now parse the response body and capture `icon_asset_id` / `iconImageAssetId` back into `icon_id` — no more `download` round-trip to refresh icons. (2) New `icon_hash` field (BLAKE3 of raw on-disk bytes) persists next to `icon_id` in `rbxmonet.toml`; `sync` only re-uploads when the hash changed (use `-f` / `--force-icons` to bypass). (3) Dev products now emit `icon = "rbxassetid://<id>"` in `monets.luau` (previously skipped). `export type Product` adds `icon: string?`; `.d.ts` interface adds `icon?: string`. (4) New `update_badge_icon` (POST `legacy-publish/v1/badges/{id}/icon`) — editing `icon = "..."` on an existing badge now uploads the new icon. (5) `ProductDiff::Icon(old8, new8)` row in the diff TUI when an icon's hash changed. (6) Missing / unreadable icon file degrades to a warn + continue instead of aborting the entry's update; other fields still sync.
